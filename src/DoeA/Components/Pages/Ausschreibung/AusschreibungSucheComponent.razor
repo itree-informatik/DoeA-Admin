@@ -1,0 +1,543 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Data.Models.DTO
+@using DoeA.Data.Models.DTO.Stammdaten
+@using DoeA.Interfaces.Stammdaten
+@using DoeA.Services
+
+@inject IOffertezustandService OffertezustandService
+@inject IProjektartService ProjektartService
+@inject IAusschreibungService AusschreibungService
+@inject INavigationService NavigationService
+@inject IErrorHandlerService ErrorHandlerService
+@inject AusschreibungSucheState SucheState
+@inject AusschreibungHerkunftState HerkunftState
+
+@inherits BaseComponent
+
+@if (!IstModalSuche)
+{
+    <h3> <ItreeTranslation Key="AUSSCHREIBUNGEN" /></h3>
+}
+
+@if (_isLoading)
+{
+    <ItreeSpinner />
+}
+else
+{
+    @* app.css: .pager-oben schiebt den Pager optisch über die Tabelle, .grid-scroll-x hält die
+       Mindestbreite von 740px und scrollt den Block darunter horizontal. *@
+    <div class="pager-oben grid-scroll-x">
+    <ItreeGrid @ref="_grid" TItem="AusschreibungSuche" Data="_dataList" Pageable="true" PageSize="@_gridParameter!.PageSize"
+               PageSizes="PageSizeOptions" Sortable="true" FilterMode="ItreeGridFilterMode.FilterMenu"
+               OnRowClick="EditItem" OnRowRender="ZeilenKlasse" OnStateInit="StateLaden" OnStateChanged="StateMerken">
+        <GridToolBarTemplate>
+            @* py-2 gibt der mehrzeiligen Toolbar den Abstand, den ihre fixe Höhe nicht hergibt
+               (siehe .pager-oben in app.css); flex-nowrap hält die Filterzeile umbruchfrei. *@
+            <div class="d-flex flex-column flex-grow-1 py-2 w-100">
+                @* app.css: .filter-block gibt der Filterzeile und der Searchbox darunter dieselbe Breite. *@
+                <div class="filter-block">
+                    <div class="d-flex align-center flex-nowrap">
+                        <div class="mr-5 feld-w-120">
+                            @* Leer (0) = alle Jahre, DefaultText ist der Platzhalter dafür *@
+                            <ItreeComboBox TItem="int" TValue="int" Data="_jahre" Value="@_gridParameter.Jahr" ValueChanged="(int year) => _gridParameter.Jahr = year"
+                                           DefaultText="@TranslationHelper.Translate("AUSSCHREIBUNGEN_ALLE_JAHRE")" Clearable="true" />
+                        </div>
+
+                        <div class="feld-minw-180">
+                            <ItreeDatePicker TValue="DateTime?" Placeholder="@TranslationHelper.Translate("AUSSCHREIBUNGEN_PUBLIKATION_VON")"
+                                             Value="_gridParameter.PublikationVon" ValueChanged="PublikationVonChanged"
+                                             Clearable="true" Class="datepicker-schmal" />
+                        </div>
+                        <div class="feld-minw-180">
+                            <ItreeDatePicker TValue="DateTime?" Placeholder="@TranslationHelper.Translate("AUSSCHREIBUNGEN_PUBLIKATION_BIS")"
+                                             Value="_gridParameter.PublikationBis" ValueChanged="PublikationBisChanged"
+                                             Clearable="true" Class="datepicker-schmal" />
+                        </div>
+
+                        @* Betragsbereich: findet Ausschreibungen mit mindestens einer Offerte im Bereich. *@
+                        <div class="mr-5 feld-minw-140">
+                            <MudNumericField T="decimal?" Placeholder="@TranslationHelper.Translate("AUSSCHREIBUNGEN_BETRAG_VON")"
+                                             Value="_gridParameter.BetragVon" ValueChanged="BetragVonChanged"
+                                             Clearable="true" Margin="Margin.Dense" HideSpinButtons="true" />
+                        </div>
+                        <div class="feld-minw-140">
+                            <MudNumericField T="decimal?" Placeholder="@TranslationHelper.Translate("AUSSCHREIBUNGEN_BETRAG_BIS")"
+                                             Value="_gridParameter.BetragBis" ValueChanged="BetragBisChanged"
+                                             Clearable="true" Margin="Margin.Dense" HideSpinButtons="true" />
+                        </div>
+                        @* Wirkt nur auf die Anbieter-Treffer der Freitextsuche (aktueller Zustand der gefundenen Offerte). *@
+                        <div class="ml-5 feld-w-250">
+                            <ItreeComboBox TItem="Offertezustand" TValue="Guid?" Data="_offertezustaende" TextField="Bezeichnung" ValueField="Id"
+                                           Value="_gridParameter.OffertezustandId" ValueChanged="(Guid? id) => _gridParameter.OffertezustandId = id"
+                                           DefaultText="@TranslationHelper.Translate("AUSSCHREIBUNGEN_OFFERTEZUSTAND_EGAL")" Clearable="true" />
+                        </div>
+                    </div>
+
+                    <div class="mt-2 searchbox-box">
+                        <ItreeSearchbox Id="searchbox" OnClick="LoadData" @bind-value="@_gridParameter.SearchValue" HideOnlyActive="true" Width="660px" />
+                    </div>
+                </div>
+                @if (!IstModalSuche)
+                {
+                    <div class="d-flex align-center justify-end mt-2 w-100">
+                        <div class="ml-3 mr-3">
+                            <ItreeButton Id="button_clearsearch"
+                                            ShowTooltip="true"
+                                            TooltipTextKey="AUSSCHREIBUNGEN_FILTER_LOESCHEN_TOOLTIP"
+                                            ButtonTextKey="AUSSCHREIBUNGEN_FILTER_LOESCHEN"
+                                            Icon="@MudBlazor.Icons.Material.Filled.FilterAltOff"
+                                            OnClick="ResetSuche"
+                                            ShowIcon="true" />
+                        </div>
+
+                        <div class="mr-3">
+                            <ItreeButton Id="button_spalten"
+                                            ShowTooltip="true"
+                                            TooltipTextKey="AUSSCHREIBUNGEN_SPALTENEINSTELLUNGEN"
+                                            ButtonTextKey="AUSSCHREIBUNGEN_SPALTENEINSTELLUNGEN"
+                                            Icon="@MudBlazor.Icons.Material.Filled.ViewColumn"
+                                            OnClick="@(() => _spaltenPopup?.Open())"
+                                            ShowIcon="true" />
+                        </div>
+                        <ItreeButton Type="EnumButton.Neu" OnClick="@(() => NewAusschreibung())" ShowTooltip="true" />
+                    </div>
+                }
+            </div>
+        </GridToolBarTemplate>
+        <GridColumns>
+            @* Sichtbar sind nur die Spalten aus den Spalteneinstellungen. Die Werte-Spalten filtern über eine Auswahl der
+               vorkommenden Werte, die Ja/Nein-Spalten über das Filtermenü des Grids. *@
+            <ItreeGridColumn Field="Art" Title="@TranslationHelper.Translate("AUSSCHREIBUNGEN_ART")" Visible="@Sichtbar(SpalteArt)"
+                             FilterMenuTemplate="@AuswahlFilterMenue(SpalteArt)" FilterMenuButtonsTemplate="@AuswahlFilterButtons(SpalteArt)" />
+            <ItreeGridColumn Field="Jahr" Title="@TranslationHelper.Translate("AUSSCHREIBUNGEN_JAHR")" Visible="@Sichtbar(SpalteJahr)"
+                             FilterMenuTemplate="@AuswahlFilterMenue(SpalteJahr)" FilterMenuButtonsTemplate="@AuswahlFilterButtons(SpalteJahr)" />
+            <ItreeGridColumn Field="NummerStr" Title="@TranslationHelper.Translate("AUSSCHREIBUNGEN_NUMMER")" Visible="@Sichtbar(nameof(AusschreibungSuche.NummerStr))" />
+            <ItreeGridColumn Field="SimapNr" Title="@TranslationHelper.Translate("AUSSCHREIBUNGEN_SIMAPNR")" Visible="@Sichtbar(nameof(AusschreibungSuche.SimapNr))" />
+            <ItreeGridColumn Field="Dienststellennummer" Title="@TranslationHelper.Translate("AUSSCHREIBUNGEN_DIENSTSTELLENNUMMER")" Visible="@Sichtbar(SpalteDienststellennummer)"
+                             FilterMenuTemplate="@AuswahlFilterMenue(SpalteDienststellennummer)" FilterMenuButtonsTemplate="@AuswahlFilterButtons(SpalteDienststellennummer)" />
+            <ItreeGridColumn Field="Bezeichnung" Title="@TranslationHelper.Translate("AUSSCHREIBUNGEN_BEZEICHNUNG")" Visible="@Sichtbar(nameof(AusschreibungSuche.Bezeichnung))" />
+            <ItreeGridColumn Field="Rolle" Title="@TranslationHelper.Translate("AUSSCHREIBUNGEN_ROLLE")" Visible="@Sichtbar(SpalteRolle)"
+                             FilterMenuTemplate="@AuswahlFilterMenue(SpalteRolle)" FilterMenuButtonsTemplate="@AuswahlFilterButtons(SpalteRolle)" />
+            <ItreeGridColumn Field="Sachbearbeiter" Title="@TranslationHelper.Translate("AUSSCHREIBUNGEN_SACHBEARBEITER")" Visible="@Sichtbar(SpalteSachbearbeiter)"
+                             FilterMenuTemplate="@AuswahlFilterMenue(SpalteSachbearbeiter)" FilterMenuButtonsTemplate="@AuswahlFilterButtons(SpalteSachbearbeiter)" />
+            <ItreeGridColumn Field="Rechtsdienst" Title="@TranslationHelper.Translate("AUSSCHREIBUNGEN_SACHBEARBEITER_RD")" Visible="@Sichtbar(SpalteRechtsdienst)"
+                             FilterMenuTemplate="@AuswahlFilterMenue(SpalteRechtsdienst)" FilterMenuButtonsTemplate="@AuswahlFilterButtons(SpalteRechtsdienst)" />
+            <ItreeGridColumn Field="Bbl" Title="@TranslationHelper.Translate("AUSSCHREIBUNGEN_SACHBEARBEITER_BBL")" Visible="@Sichtbar(SpalteBbl)"
+                             FilterMenuTemplate="@AuswahlFilterMenue(SpalteBbl)" FilterMenuButtonsTemplate="@AuswahlFilterButtons(SpalteBbl)" />
+            <ItreeGridColumn Field="Extern" Title="@TranslationHelper.Translate("AUSSCHREIBUNGEN_EXTERN")" Visible="@Sichtbar(nameof(AusschreibungSuche.Extern))" />
+            <ItreeGridColumn Field="Verfahrensart" Title="@TranslationHelper.Translate("AUSSCHREIBUNGEN_VERFAHRENSART")" Visible="@Sichtbar(SpalteVerfahrensart)"
+                             FilterMenuTemplate="@AuswahlFilterMenue(SpalteVerfahrensart)" FilterMenuButtonsTemplate="@AuswahlFilterButtons(SpalteVerfahrensart)" />
+            <ItreeGridColumn Field="Leistungsart" Title="@TranslationHelper.Translate("AUSSCHREIBUNGEN_LEISTUNGSART")" Visible="@Sichtbar(SpalteLeistungsart)"
+                             FilterMenuTemplate="@AuswahlFilterMenue(SpalteLeistungsart)" FilterMenuButtonsTemplate="@AuswahlFilterButtons(SpalteLeistungsart)" />
+            <ItreeGridColumn Field="Personalverleih" Title="@TranslationHelper.Translate("AUSSCHREIBUNGEN_PERSONALVERLEIH")" Visible="@Sichtbar(nameof(AusschreibungSuche.Personalverleih))">
+                <Template>
+                    <JaNeinIcon Wert="context.Personalverleih" />
+                </Template>
+            </ItreeGridColumn>
+            <ItreeGridColumn Field="Publiziert" Title="@TranslationHelper.Translate("AUSSCHREIBUNGEN_PUBLIZIERT")" Visible="@Sichtbar(SpaltePubliziert)">
+                <FilterMenuTemplate>
+                    @foreach (var key in PubliziertTeilKeys)
+                    {
+                        <div class="d-flex flex-column mb-2">
+                            <label class="form-label">@TranslationHelper.Translate(PubliziertTitelKeys[key])</label>
+                            <ItreeMultiSelect TItem="FilterWert" TValue="string" Data="@PubliziertWerte(key)" TextField="Text" ValueField="Key"
+                                              Value="@Auswahl(key)" ValueChanged="@(werte => AuswahlSetzen(key, werte))" />
+                        </div>
+                    }
+                </FilterMenuTemplate>
+                <FilterMenuButtonsTemplate Context="filter">
+                    <ItreeFilterButtons OnFilter="@(() => PubliziertFiltern(filter))" OnClear="@(() => PubliziertLeeren(filter))" />
+                </FilterMenuButtonsTemplate>
+            </ItreeGridColumn>
+            <ItreeGridColumn Field="Abgeschlossen" Visible="@Sichtbar(nameof(AusschreibungSuche.Abgeschlossen))">
+                <HeaderTemplate>
+                    <ItreeTooltip Field="Abgeschlossen" TranslationKey="AUSSCHREIBUNGEN_ABGESCHLOSSEN" IsHeader="true" />
+                </HeaderTemplate>
+                <Template>
+                    <JaNeinIcon Wert="context.Abgeschlossen" />
+                </Template>
+            </ItreeGridColumn>
+            <ItreeGridColumn Field="Abgebrochen" Visible="@Sichtbar(nameof(AusschreibungSuche.Abgebrochen))">
+                <HeaderTemplate>
+                    <ItreeTooltip Field="Abgebrochen" TranslationKey="AUSSCHREIBUNGEN_ABGEBROCHEN" IsHeader="true" />
+                </HeaderTemplate>
+                <Template>
+                    <JaNeinIcon Wert="context.Abgebrochen" />
+                </Template>
+            </ItreeGridColumn>
+            <ItreeGridColumn Field="Widerrufen" Visible="@Sichtbar(nameof(AusschreibungSuche.Widerrufen))">
+                <HeaderTemplate>
+                    <ItreeTooltip Field="Widerrufen" TranslationKey="AUSSCHREIBUNGEN_WIDERRUFEN" IsHeader="true" />
+                </HeaderTemplate>
+                <Template>
+                    <JaNeinIcon Wert="context.Widerrufen" />
+                </Template>
+            </ItreeGridColumn>
+            <ItreeGridColumn Field="RfiNummer" Title="@TranslationHelper.Translate("AUSSCHREIBUNGEN_RFI")" Visible="@Sichtbar(nameof(AusschreibungSuche.RfiNummer))" />
+            <ItreeGridColumn Field="VorankuendigungNummer" Title="@TranslationHelper.Translate("AUSSCHREIBUNGEN_VORANKUENDIGUNG")" Visible="@Sichtbar(nameof(AusschreibungSuche.VorankuendigungNummer))" />
+        </GridColumns>
+    </ItreeGrid>
+    </div>
+
+    @if (!IstModalSuche)
+    {
+        <SpaltenPopup @ref="_spaltenPopup"
+                      TitelKey="AUSSCHREIBUNGEN_SPALTENEINSTELLUNGEN"
+                      AlleSpalten="AusschreibungSucheSpalten.AlleSpalten"
+                      SichtbareSpalten="_sichtbareSpalten"
+                      OnChange="StateHasChanged" />
+    }
+}
+
+@code {
+    /// <summary>Meldet die angeklickte Zeile; ohne Delegate navigiert ein Zeilenklick zur Ausschreibung.</summary>
+    [Parameter]
+    public EventCallback<AusschreibungSuche> OnSelect { get; set; }
+
+    /// <summary>Sucht nur Hauptprojekte (Bau, ohne übergeordnetes Projekt).</summary>
+    [Parameter]
+    public bool SearchForHauptprojekt { get; set; }
+
+    /// <summary>Ausschreibung, die sich nicht selbst als Hauptprojekt wählen darf; ihre Zeile ist rot und gesperrt.</summary>
+    [Parameter]
+    public Guid? ChildAusschreibung { get; set; }
+
+    /// <summary>Schränkt auf Verfahrensarten (NaturalIds) ein, z.B. Vorankündigung/RFI; null = keine Einschränkung.</summary>
+    [Parameter]
+    public string[]? VerfahrensartFilter { get; set; }
+
+    // Spalten mit Werte-Auswahlfilter; der Key ist zugleich das Feld der Spalte.
+    private const string SpalteArt = nameof(AusschreibungSuche.Art);
+    private const string SpalteJahr = nameof(AusschreibungSuche.Jahr);
+    private const string SpalteDienststellennummer = nameof(AusschreibungSuche.Dienststellennummer);
+    private const string SpalteRolle = nameof(AusschreibungSuche.Rolle);
+    private const string SpalteSachbearbeiter = nameof(AusschreibungSuche.Sachbearbeiter);
+    private const string SpalteRechtsdienst = nameof(AusschreibungSuche.Rechtsdienst);
+    private const string SpalteBbl = nameof(AusschreibungSuche.Bbl);
+    private const string SpalteVerfahrensart = nameof(AusschreibungSuche.Verfahrensart);
+    private const string SpalteLeistungsart = nameof(AusschreibungSuche.Leistungsart);
+    private const string SpaltePubliziert = nameof(AusschreibungSuche.Publiziert);
+    private const string SpaltePubliziertJahr = nameof(AusschreibungSuche.PubliziertJahr);
+    private const string SpaltePubliziertMonat = nameof(AusschreibungSuche.PubliziertMonat);
+    private const string SpaltePubliziertTag = nameof(AusschreibungSuche.PubliziertTag);
+
+    private static readonly List<int?> PageSizeOptions = [10, 25, 50, 100];
+
+    // Die Publiziert-Spalte filtert über drei Dimensionen, die zusammen wirken.
+    private static readonly string[] PubliziertTeilKeys = [SpaltePubliziertJahr, SpaltePubliziertMonat, SpaltePubliziertTag];
+
+    private static readonly Dictionary<string, string> PubliziertTitelKeys = new()
+    {
+        [SpaltePubliziertJahr] = "AUSSCHREIBUNGEN_JAHR",
+        [SpaltePubliziertMonat] = "AUSSCHREIBUNGEN_PUBLIZIERT_MONAT",
+        [SpaltePubliziertTag] = "AUSSCHREIBUNGEN_PUBLIZIERT_TAG",
+    };
+
+    // Wert, gegen den eine Auswahl-Spalte filtert (als Anzeige-String, damit Auswahl und Vergleich identisch sind).
+    private static readonly Dictionary<string, Func<AusschreibungSuche, string?>> SpaltenWerte = new()
+    {
+        [SpalteJahr] = x => x.Jahr.ToString(),
+        [SpalteDienststellennummer] = x => x.Dienststellennummer,
+        [SpalteRolle] = x => x.Rolle,
+        [SpalteSachbearbeiter] = x => x.Sachbearbeiter,
+        [SpalteRechtsdienst] = x => x.Rechtsdienst,
+        [SpalteBbl] = x => x.Bbl,
+        [SpalteVerfahrensart] = x => x.Verfahrensart,
+        [SpalteLeistungsart] = x => x.Leistungsart,
+    };
+
+    private sealed record FilterWert(string Key, string Text);
+
+    private bool _isLoading = true;
+
+    // Auswahl je Spalten-Key. In der Hauptsuche dieselbe Instanz wie SucheState.SpaltenFilter (bleibt über Navigationen
+    // erhalten), in der Modal-Suche eine eigene. ItreeFilterCheckboxList mutiert die Listen in-place.
+    private Dictionary<string, List<string>> _spaltenFilterAuswahl = new();
+
+    private GridParameter? _gridParameter;
+
+    // Sichtbare Ergebnisspalten: in der Hauptsuche dieselbe Instanz wie SucheState.SichtbareSpalten
+    // (in-place mutiert -> bleibt über Navigationen erhalten), in der Modal-Suche der kompakte Satz der Auswahlfenster.
+    private HashSet<string> _sichtbareSpalten = new();
+
+    private IList<AusschreibungSuche>? _dataList;
+
+    private ItreeGrid<AusschreibungSuche>? _grid;
+
+    private List<int>? _jahre;
+    private List<Offertezustand>? _offertezustaende;
+    private List<Projektart>? _projektarten = new();
+
+    private SpaltenPopup? _spaltenPopup;
+
+    // Auswahl-Popout statt persistierter Hauptsuche.
+    private bool IstModalSuche => SearchForHauptprojekt || VerfahrensartFilter != null;
+
+    private bool Sichtbar(string spalte) => _sichtbareSpalten.Contains(spalte);
+
+    // Jahr 2000 ist Platzhalter, gebraucht wird nur der Monatsname.
+    private static string MonatAnzeige(string monat) => $"{monat} - {new DateTime(2000, int.Parse(monat), 1):MMMM}";
+
+    private List<string> Auswahl(string key) =>
+        _spaltenFilterAuswahl.TryGetValue(key, out var auswahl) ? auswahl : _spaltenFilterAuswahl[key] = new();
+
+    private void AuswahlSetzen(string key, List<string> werte) => _spaltenFilterAuswahl[key] = werte;
+
+    private void ZeilenKlasse(ItreeGridRowRenderEventArgs args) =>
+        args.Class = ((AusschreibungSuche)args.Item).Id == ChildAusschreibung ? "row-color-red" : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _jahre = await AusschreibungService.GetAlleJahre();
+        _projektarten = await ProjektartService.GetAll();
+        _offertezustaende = (await OffertezustandService.GetAll()).Alphabetisch(z => z.Bezeichnung);
+
+        if (IstModalSuche)
+        {
+            // Modal-Suche: eigener, nicht persistierter Zustand.
+            _gridParameter = NeuerGridParameter();
+            _sichtbareSpalten = AusschreibungSucheSpalten.AuswahlfensterSpalten();
+            await LoadData();
+        }
+        else
+        {
+            // Hauptsuche: letzten Suchzustand wiederherstellen bzw. beim ersten Aufruf initialisieren; die Spaltenfilter
+            // selbst stellt das Grid über StateLaden wieder her.
+            SucheState.GridParameter ??= NeuerGridParameter();
+            _gridParameter = SucheState.GridParameter;
+            _spaltenFilterAuswahl = SucheState.SpaltenFilter;
+            _sichtbareSpalten = SucheState.SichtbareSpalten;
+            _dataList = SucheState.Ergebnis;
+
+            // Nach einer Änderung an einer Ausschreibung das gemerkte Ergebnis mit denselben Parametern neu laden.
+            if (_dataList != null && SucheState.ErgebnisVeraltet)
+            {
+                await LoadData();
+            }
+        }
+
+        _isLoading = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // Ohne die Sichtbarkeit der Spalten: ein Wert aus dem State hätte im Grid Vorrang vor Visible, die Spalteneinstellungen
+    // (SucheState.SichtbareSpalten) wirkten nach der Rückkehr auf die Suche nicht mehr.
+    private void StateLaden(ItreeGridStateEventArgs<AusschreibungSuche> args)
+    {
+        if (IstModalSuche || SucheState.GridState == null)
+        {
+            return;
+        }
+
+        foreach (var spalte in SucheState.GridState.ColumnStates)
+        {
+            spalte.Visible = null;
+        }
+
+        args.GridState = SucheState.GridState;
+    }
+
+    private void StateMerken(ItreeGridStateEventArgs<AusschreibungSuche> args)
+    {
+        if (!IstModalSuche)
+        {
+            SucheState.GridState = args.GridState;
+        }
+    }
+
+    // Verwirft neben den Suchwerten und Spaltenfiltern auch das gemerkte Ergebnis, das Grid bleibt danach leer.
+    private async Task ResetSuche()
+    {
+        _gridParameter = NeuerGridParameter();
+        SucheState.GridParameter = _gridParameter;
+
+        _spaltenFilterAuswahl.Clear(); // gleiche Instanz wie SucheState.SpaltenFilter
+        SucheState.GridState = null;
+        if (_grid != null)
+        {
+            await _grid.SetStateAsync(new ItreeGridState<AusschreibungSuche> { PageSize = _gridParameter.PageSize });
+        }
+
+        _dataList = null;
+        SucheState.Ergebnis = null;
+    }
+
+    // Startzustand der Suche: in der Übersicht alle Jahre (gesucht wird erst mit «Suchen»), in der sofort ladenden
+    // Modal-Suche das neueste Jahr; sonst keine Einschränkung.
+    private GridParameter NeuerGridParameter() => new()
+    {
+        SkipItems = 0,
+        PageNumber = 1,
+        PageSize = 50,
+        SearchValue = string.Empty,
+        Jahr = IstModalSuche && _jahre != null && _jahre.Any() ? _jahre.First() : 0
+    };
+
+    private async Task LoadData()
+    {
+        int? jahr = _gridParameter!.Jahr == 0 ? null : _gridParameter.Jahr;
+        DateOnly? publikationVon = _gridParameter.PublikationVon.HasValue
+            ? DateOnly.FromDateTime(_gridParameter.PublikationVon.Value) : null;
+        DateOnly? publikationBis = _gridParameter.PublikationBis.HasValue
+            ? DateOnly.FromDateTime(_gridParameter.PublikationBis.Value) : null;
+
+        _dataList = await AusschreibungService.Suche(jahr, _gridParameter.SearchValue ?? string.Empty, publikationVon, publikationBis, SearchForHauptprojekt, VerfahrensartFilter, _gridParameter.BetragVon, _gridParameter.BetragBis, _gridParameter.OffertezustandId);
+
+        // Ergebnis der Hauptsuche merken, damit es beim Zurückkehren erhalten bleibt.
+        if (!IstModalSuche)
+        {
+            SucheState.Ergebnis = _dataList;
+            SucheState.ErgebnisVeraltet = false;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // "Von" nie neuer als "Bis" zulassen: liegt "Von" nach "Bis", wird "Bis" nachgezogen.
+    private void PublikationVonChanged(DateTime? datum)
+    {
+        _gridParameter!.PublikationVon = datum;
+        if (datum.HasValue && _gridParameter.PublikationBis < datum)
+        {
+            _gridParameter.PublikationBis = datum;
+        }
+    }
+
+    // "Bis" nie älter als "Von" zulassen: liegt "Bis" vor "Von", wird "Von" nachgezogen.
+    private void PublikationBisChanged(DateTime? datum)
+    {
+        _gridParameter!.PublikationBis = datum;
+        if (datum.HasValue && _gridParameter.PublikationVon > datum)
+        {
+            _gridParameter.PublikationVon = datum;
+        }
+    }
+
+    // "Betrag von" nie grösser als "Betrag bis" zulassen: liegt "von" darüber, wird "bis" nachgezogen.
+    private void BetragVonChanged(decimal? betrag)
+    {
+        _gridParameter!.BetragVon = betrag;
+        if (betrag.HasValue && _gridParameter.BetragBis < betrag)
+        {
+            _gridParameter.BetragBis = betrag;
+        }
+    }
+
+    // "Betrag bis" nie kleiner als "Betrag von" zulassen: liegt "bis" darunter, wird "von" nachgezogen.
+    private void BetragBisChanged(decimal? betrag)
+    {
+        _gridParameter!.BetragBis = betrag;
+        if (betrag.HasValue && _gridParameter.BetragVon > betrag)
+        {
+            _gridParameter.BetragVon = betrag;
+        }
+    }
+
+    // Filtermenü einer Werte-Spalte: Auswahl über die vorkommenden Werte (Art: alle Projektarten aus den Stammdaten).
+    private RenderFragment<ItreeGridFilterContext> AuswahlFilterMenue(string key) => _ =>
+        @<ItreeFilterCheckboxList Items="@WerteEintraege(key)" SelectedKeys="@Auswahl(key)" IdPrefix="@key.ToLowerInvariant()" />;
+
+    private RenderFragment<ItreeGridFilterContext> AuswahlFilterButtons(string key) => filter =>
+        @<ItreeFilterButtons OnFilter="@(() => MultiFilterAsync(filter, key, Auswahl(key), key == SpalteJahr ? wert => int.Parse(wert) : null))"
+                             OnClear="@(() => MultiClearFilterAsync(filter, Auswahl(key)))" />;
+
+    private Dictionary<string, string> WerteEintraege(string key)
+    {
+        var werte = key == SpalteArt
+            ? _projektarten?.Select(p => p.Bezeichnung) ?? []
+            : (_dataList ?? []).Select(SpaltenWerte[key]).Where(w => !string.IsNullOrEmpty(w)).Select(w => w!);
+
+        return werte.Distinct().ToDictionary(w => w, w => w);
+    }
+
+    // Kaskadierte Werte für den Publiziert-Filter: Monate nur aus den gewählten Jahren,
+    // Tage nur aus den gewählten Jahren/Monaten.
+    private List<FilterWert> PubliziertWerte(string key)
+    {
+        var daten = (_dataList ?? Enumerable.Empty<AusschreibungSuche>()).Where(x => x.Publiziert != null).ToList();
+        var jahre = Auswahl(SpaltePubliziertJahr);
+        var monate = Auswahl(SpaltePubliziertMonat);
+
+        return key switch
+        {
+            SpaltePubliziertJahr => daten
+                .Select(d => d.PubliziertJahr!).Distinct().OrderByDescending(int.Parse)
+                .Select(j => new FilterWert(j, j)).ToList(),
+            SpaltePubliziertMonat => daten
+                .Where(d => jahre.Count == 0 || jahre.Contains(d.PubliziertJahr!))
+                .Select(d => d.PubliziertMonat!).Distinct().Order()
+                .Select(m => new FilterWert(m, MonatAnzeige(m))).ToList(),
+            _ => daten
+                .Where(d => (jahre.Count == 0 || jahre.Contains(d.PubliziertJahr!)) && (monate.Count == 0 || monate.Contains(d.PubliziertMonat!)))
+                .Select(d => d.PubliziertTag!).Distinct().Order()
+                .Select(t => new FilterWert(t, t)).ToList()
+        };
+    }
+
+    // Jahr, Monat und Tag wirken zusammen (Und), innerhalb einer Dimension genügt einer der gewählten Werte (Oder). Die
+    // Bedingung auf Publiziert selbst steht vorne: beim Wiederherstellen ordnet das Grid einen Filter über sein erstes Feld
+    // der Spalte zu.
+    private async Task PubliziertFiltern(ItreeGridFilterContext filter)
+    {
+        var bedingungen = filter.FilterDescriptor.FilterDescriptors;
+        bedingungen.Clear();
+
+        var gewaehlt = PubliziertTeilKeys.Where(k => Auswahl(k).Count > 0).ToList();
+        if (gewaehlt.Count > 0)
+        {
+            bedingungen.Add(new ItreeFilterDescriptor(SpaltePubliziert, ItreeFilterOperator.IsNotNull, null));
+            foreach (var key in gewaehlt)
+            {
+                var oder = new ItreeCompositeFilterDescriptor { LogicalOperator = ItreeFilterLogicalOperator.Or };
+                foreach (var wert in Auswahl(key))
+                {
+                    oder.FilterDescriptors.Add(new ItreeFilterDescriptor(key, ItreeFilterOperator.IsEqualTo, wert));
+                }
+
+                bedingungen.Add(oder);
+            }
+        }
+
+        await filter.FilterAsync();
+    }
+
+    private async Task PubliziertLeeren(ItreeGridFilterContext filter)
+    {
+        foreach (var key in PubliziertTeilKeys)
+        {
+            Auswahl(key).Clear();
+        }
+
+        await filter.ClearFilterAsync();
+    }
+
+    // In der Modal-Suche die Auswahl melden, sonst zur Ausschreibung navigieren.
+    private async Task EditItem(ItreeGridRowClickEventArgs args)
+    {
+        var row = (AusschreibungSuche)args.Item;
+
+        if (ChildAusschreibung == row.Id)
+        {
+            return;
+        }
+
+        if (OnSelect.HasDelegate)
+        {
+            await OnSelect.InvokeAsync(row);
+        }
+        else
+        {
+            HerkunftState.RuecksprungUrl = null;
+            NavigationService.NavigateTo($"ausschreibung/{row.Id}");
+        }
+    }
+
+    private void NewAusschreibung()
+    {
+        HerkunftState.RuecksprungUrl = null;
+        NavigationService.NavigateTo($"ausschreibung/{Guid.Empty}");
+    }
+}

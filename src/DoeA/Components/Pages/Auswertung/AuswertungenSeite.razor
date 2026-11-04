@@ -1,0 +1,56 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@page "/auswertungen"
+
+<ItreeSiteTitle TranslationKey="AUSWERTUNGEN" />
+
+@* lg statt md: Die Sidebar geht von der Fensterbreite ab, auf die sich die MudGrid-Breakpoints
+   beziehen — bei zwei Spalten unter 1280px würden die Kachel-Formulare zu eng. *@
+<MudGrid>
+    <MudItem xs="12" lg="6">
+        <MudPaper Elevation="2" Class="pa-4 tile-hoehe-xl">
+            <TileAusschreibungen Refresh="@Refresh" />
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" lg="6">
+        <MudPaper Elevation="2" Class="pa-4 tile-hoehe-xl">
+            <TileZuschlaege Refresh="@Refresh" />
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" lg="6">
+        <MudPaper Elevation="2" Class="pa-4 tile-hoehe-s">
+            <TileZuschlaegeOhneFreihaender Refresh="@Refresh" />
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" lg="6">
+        <MudPaper Elevation="2" Class="pa-4 tile-hoehe-s">
+            <TileFreihaender Refresh="@Refresh" />
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" lg="6">
+        <MudPaper Elevation="2" Class="pa-4 tile-hoehe-l">
+            <TileLaufendeWto Refresh="@Refresh" />
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" lg="6">
+        <MudPaper Elevation="2" Class="pa-4 tile-hoehe-l">
+            <TileAbbruchWiderruf Refresh="@Refresh" />
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" lg="6">
+        <MudPaper Elevation="2" Class="pa-4 tile-hoehe-m">
+            <TileZielerreichung Refresh="@Refresh" />
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" lg="6">
+        <MudPaper Elevation="2" Class="pa-4 tile-hoehe-m">
+            <TileBeschaffungscontrolling Refresh="@Refresh" />
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    // Die Kacheln melden Filteränderungen, damit die Seite die Aktivierung ihrer Buttons neu bewertet.
+    private async Task Refresh() => await InvokeAsync(StateHasChanged);
+}

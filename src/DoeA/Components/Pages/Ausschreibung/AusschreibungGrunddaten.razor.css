@@ -1,0 +1,26 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL */
+
+/* Fieldset-Klassen (form-fieldset, fieldset-legend, legend-klappbar, ...) liegen in app.css,
+   da auch die Unterkomponenten (Verantwortliche, Berichtigungen) sie verwenden. */
+
+.flex-fixed {
+    flex: 0 0 auto;
+}
+
+/* Datumsfelder: Spalten in Inhaltsbreite (bei Selektiv über alle Zeilen), Spaltenabstand wie gap-6. Platzierung
+   der Zeile «Anzahl Tage» (AnzahlTageFeld) unter einem Datumspaar: app.css. */
+.datum-raster {
+    display: grid;
+    column-gap: 24px;
+    row-gap: 0.25rem;
+    align-items: end;
+}
+
+.datum-raster.spalten-3 {
+    grid-template-columns: repeat(3, max-content);
+}
+
+.datum-raster.spalten-4 {
+    grid-template-columns: repeat(4, max-content);
+}

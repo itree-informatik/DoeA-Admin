@@ -1,0 +1,57 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Components.Pages.Stammdaten
+@using DoeA.Data.Models.DTO.Stammdaten
+@inherits BaseComponent
+
+@* Label mit dem gewählten Anbieter + Button, der ein Such-/Erfass-Popout öffnet. *@
+<div class="d-flex align-items-center gap-2">
+    <MudTextField T="string" Value="@(Anbieter?.Name ?? string.Empty)" ReadOnly="true" Disabled="true"
+                  Margin="Margin.Dense"
+                  Placeholder="@TranslationHelper.Translate("AUSWAEHLEN")" />
+    <ItreeButton Type="EnumButton.Hinzufuegen" OnClick="@(() => _showPopout = true)" ShowButtonText="false" Enabled="@Enabled" />
+</div>
+
+@if (_showPopout)
+{
+    <ItreeWindow @bind-Visible="_showPopout" MaxWidth="MaxWidth.ExtraLarge">
+        <WindowTitle>
+            <strong><ItreeTranslation Key="AUSSCHREIBUNG_OFFERTE_ANBIETER" /></strong>
+        </WindowTitle>
+        <WindowContent>
+            <AnbieterSeite OnSelect="OnAnbieterSelected" />
+        </WindowContent>
+        <WindowFooter>
+            <ItreeButton Type="EnumButton.Schliessen" OnClick="@(() => _showPopout = false)" />
+        </WindowFooter>
+    </ItreeWindow>
+}
+
+@code {
+    /// <summary>Steuert, ob die Auswahl geöffnet werden kann.</summary>
+    [Parameter] public bool Enabled { get; set; } = true;
+
+    /// <summary>Gewählter Anbieter für die Label-Anzeige (Two-Way-Binding via <c>AnbieterChanged</c>).</summary>
+    [Parameter] public Anbieter? Anbieter { get; set; }
+
+    /// <summary>Meldet den geänderten Anbieter an den Aufrufer.</summary>
+    [Parameter] public EventCallback<Anbieter> AnbieterChanged { get; set; }
+
+    /// <summary>Wird mit dem gewählten/neu erfassten Anbieter aufgerufen (für die Verknüpfung im Aufrufer).</summary>
+    [Parameter] public EventCallback<Anbieter> OnSelected { get; set; }
+
+    private bool _showPopout;
+
+    private async Task OnAnbieterSelected(Anbieter anbieter)
+    {
+        Anbieter = anbieter;
+        _showPopout = false;
+
+        await AnbieterChanged.InvokeAsync(anbieter);
+        if (OnSelected.HasDelegate)
+        {
+            await OnSelected.InvokeAsync(anbieter);
+        }
+    }
+}

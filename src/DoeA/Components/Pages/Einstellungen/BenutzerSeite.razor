@@ -1,0 +1,106 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@page "/einstellungen/benutzer"
+@using DoeA.Data.Models.DTO.Einstellungen
+@inherits BaseComponent
+
+@inject IBenutzerService BenutzerService
+@inject IAktuellerBenutzer AktuellerBenutzer
+
+<ItreeSiteTitle TranslationKey="EINSTELLUNGEN_BENUTZER" />
+
+@if (_benutzer == null)
+{
+    <ItreeSpinner />
+}
+else
+{
+    @* Keine Detailansicht: Benutzer entstehen beim Login aus den eIAM-Claims, verwaltet wird nur die Freischaltung. *@
+    <ItreeGrid TItem="Benutzer" Data="_benutzer" Pageable="true" PageSize="20" PageSizes="@PageSizeOptions"
+               Sortable="true" FilterMode="ItreeGridFilterMode.FilterMenu">
+        <GridToolBarTemplate>
+            <MudToggleGroup T="EnumBenutzerFilter" Value="_filter" ValueChanged="FilterGeaendert"
+                            SelectionMode="SelectionMode.SingleSelection" Color="Color.Primary" Size="Size.Small"
+                            CheckMark="false" Class="me-4">
+                <MudToggleItem Value="EnumBenutzerFilter.Aktive" Text="@TranslationHelper.Translate("EINSTELLUNGEN_BENUTZER_FILTER_AKTIVE")" />
+                <MudToggleItem Value="EnumBenutzerFilter.Inaktive" Text="@TranslationHelper.Translate("EINSTELLUNGEN_BENUTZER_FILTER_INAKTIVE")" />
+                <MudToggleItem Value="EnumBenutzerFilter.Neue" Text="@TranslationHelper.Translate("EINSTELLUNGEN_BENUTZER_FILTER_NEUE")" />
+            </MudToggleGroup>
+            <ItreeSearchbox Id="searchbox" OnClick="@LadeBenutzer" Placeholder="@TranslationHelper.Translate("AUSWAEHLEN")"
+                            @bind-value="@_suchtext" HideOnlyActive="true" />
+        </GridToolBarTemplate>
+        <GridColumns>
+            <ItreeGridColumn Field="ExtId" Title="@TranslationHelper.Translate("EINSTELLUNGEN_BENUTZER_EXTID")" />
+            <ItreeGridColumn Field="Vorname" Title="@TranslationHelper.Translate("EINSTELLUNGEN_BENUTZER_VORNAME")" />
+            <ItreeGridColumn Field="Nachname" Title="@TranslationHelper.Translate("EINSTELLUNGEN_BENUTZER_NACHNAME")" />
+            <ItreeGridColumn Field="EMail" Title="@TranslationHelper.Translate("EINSTELLUNGEN_BENUTZER_EMAIL")" />
+            <ItreeGridColumn Field="Sprache" Title="@TranslationHelper.Translate("EINSTELLUNGEN_BENUTZER_SPRACHE")" />
+            @* TemplateColumn: ohne explizites Sortable="true" rendert MudBlazor keinen Sort-Button, SortBy allein reicht nicht. *@
+            <ItreeGridColumn Field="LastLogin" Title="@TranslationHelper.Translate("EINSTELLUNGEN_BENUTZER_LASTLOGIN")" Filterable="false">
+                <Template>
+                    @LetzteAnmeldung(context.LastLogin)
+                </Template>
+            </ItreeGridColumn>
+            <ItreeGridColumn Field="Aktiv" Title="@TranslationHelper.Translate("EINSTELLUNGEN_BENUTZER_AKTIV")">
+                <Template>
+                    <JaNeinIcon Wert="context.Aktiv" />
+                </Template>
+            </ItreeGridColumn>
+            <ItreeGridColumn Sortable="false" Filterable="false">
+                <Template>
+                    @if (context.Aktiv)
+                    {
+                        <ItreeButton Type="EnumButton.Sperren" ButtonTextKey="EINSTELLUNGEN_BENUTZER_DEAKTIVIEREN"
+                                     Enabled="@(!IstEigener(context))"
+                                     ShowTooltip="@IstEigener(context)"
+                                     TooltipText="@TranslationHelper.Translate("EINSTELLUNGEN_BENUTZER_EIGENER_BENUTZER")"
+                                     OnClick="@(() => SetzeAktiv(context, false))" />
+                    }
+                    else
+                    {
+                        <ItreeButton Type="EnumButton.Entsperren" ButtonTextKey="EINSTELLUNGEN_BENUTZER_AKTIVIEREN"
+                                     OnClick="@(() => SetzeAktiv(context, true))" />
+                    }
+                </Template>
+            </ItreeGridColumn>
+        </GridColumns>
+    </ItreeGrid>
+}
+
+@code {
+    private const string LoginFormat = "dd.MM.yyyy HH:mm";
+
+    private static readonly List<int?> PageSizeOptions = [10, 20, 25, 50, 100];
+
+    private EnumBenutzerFilter _filter = EnumBenutzerFilter.Aktive;
+
+    private List<Benutzer>? _benutzer;
+
+    private string _suchtext = string.Empty;
+
+    private bool IstEigener(Benutzer benutzer) => benutzer.ExtId == AktuellerBenutzer.ExtId;
+
+    private static string LetzteAnmeldung(long? ticks) => ticks.HasValue ? new DateTime(ticks.Value).ToString(LoginFormat) : string.Empty;
+
+    protected override async Task OnInitializedAsync() => await LadeBenutzer();
+
+    private async Task FilterGeaendert(EnumBenutzerFilter filter)
+    {
+        _filter = filter;
+        await LadeBenutzer();
+    }
+
+    private async Task LadeBenutzer()
+    {
+        await ErrorHandler.HandleAsync(async () => _benutzer = await BenutzerService.Suche(_filter, _suchtext));
+    }
+
+    private async Task SetzeAktiv(Benutzer benutzer, bool aktiv)
+    {
+        if (await ErrorHandler.HandleAsync(() => BenutzerService.SetzeAktiv(benutzer.Id, aktiv)))
+        {
+            await LadeBenutzer();
+        }
+    }
+}

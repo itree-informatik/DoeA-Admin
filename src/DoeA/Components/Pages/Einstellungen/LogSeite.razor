@@ -1,0 +1,311 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@page "/einstellungen/log"
+@using DoeA.Data.Models.DTO.Einstellungen
+@using DoeA.Interfaces.Einstellungen
+
+@inject IJSRuntime JsRuntime
+@inject ILogService LogService
+@inherits BaseComponent
+
+<ItreeSiteTitle TranslationKey="EINSTELLUNGEN_LOG" />
+
+@if (_dataList == null)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <ItreeGrid TItem="Log" Data="_dataList" Pageable="true" PageSize="25" Class="admin-grid"
+               Sortable="true" SortMode="SortMode.Multiple" FilterMode="ItreeGridFilterMode.FilterMenu">
+        <GridToolBarTemplate>
+            <div class="w-100 d-block log-toolbar">
+                <div class="d-flex justify-content-start pt-1 pb-1 ps-0 pe-0 log-toolbar-zeile">
+                    <span class="itree-pt-5">
+                        <ItreeTranslation Key="EINSTELLUNGEN_LOG_CURRENTLEVEL"/>
+                    </span>
+
+                    <ItreeDropDownList TItem="KeyValuePair<int, string>" TValue="int" Data="LogLevel" TextField="Value" ValueField="Key"
+                                       @bind-Value="_logLevel" />
+
+                    <ItreeButton Type="EnumButton.Speichern"
+                                 Id="button_loglevel"
+                                 OnClick="@SendLogLevel"
+                                 TooltipTextKey="EINSTELLUNGEN_LOG_LEVEL_SPEICHERN_TOOLTIP"
+                                 ShowTooltip="true"/>
+                </div>
+                <div class="container d-flex justify-content-between pt-1 log-toolbar-zeile-innen">
+                    <div class="d-flex justify-content-between log-feldgruppe">
+                        <span class="itree-pt-5">
+                            <ItreeTranslation Key="EINSTELLUNGEN_LOG_MAXZEILEN"/>
+                        </span>
+                        <MudNumericField T="int" @bind-Value="_maxZeilen" Min="1" Max="5000"
+                                         id="numericbox_maxrows" Class="log-feld-maxzeilen"
+                                         Margin="Margin.Dense" />
+                    </div>
+
+                    <div class="d-flex justify-content-between log-feldgruppe">
+                        <span class="itree-pt-5">
+                            <ItreeTranslation Key="EINSTELLUNGEN_LOG_SUCHE_VON"/>
+                        </span>
+
+                        @* Datumsformat ohne Uhrzeit: ein DatePicker erfasst keine Zeit, angezeigt würde immer 00:00.
+                           Breite via Klasse statt Style — MudPicker wendet Style aufs Popup-Paper an. *@
+                        <ItreeDatePicker TValue="DateTime?" @bind-Value="_von" Clearable="true" Class="datepicker-schmal" />
+                    </div>
+
+                    <div class="d-flex justify-content-between log-feldgruppe">
+                        <span class="itree-pt-5">
+                            <ItreeTranslation Key="EINSTELLUNGEN_LOG_SUCHE_BIS"/>
+                        </span>
+
+                        <ItreeDatePicker TValue="DateTime?" @bind-Value="_bis" Clearable="true" Class="datepicker-schmal" />
+                    </div>
+
+                    <div class="d-flex justify-content-between log-feldgruppe">
+                        <span class="itree-pt-5">
+                            <ItreeTranslation Key="EINSTELLUNGEN_LOG_SUCHE_LEVEL"/>
+                        </span>
+
+                        @* DefaultText steht für 0 = alle Level *@
+                        <ItreeDropDownList TItem="KeyValuePair<int, string>" TValue="int" Data="FilterLogLevel.Where(e => e.Key != 0)" TextField="Value" ValueField="Key"
+                                           @bind-Value="_filterLogLevel" DefaultText="@TranslationHelper.Translate("EINSTELLUNGEN_LOG_FILTER_ALLE")" />
+                    </div>
+                </div>
+                <div class="container d-flex justify-content-start pt-1 log-toolbar-zeile-innen">
+                    <span class="itree-pt-5">
+                        <ItreeTranslation Key="EINSTELLUNGEN_LOG_SUCHE_TEXT"/>
+                    </span>
+
+                    <MudTextField T="string" @bind-Value="_suchtext" id="textbox_searchvalue" Class="log-feld-suchtext" Margin="Margin.Dense" />
+
+                    <ItreeButton Id="button_search"
+                                 Type="EnumButton.Suchen"
+                                 OnClick="GetLogData"
+                                 SpinnerIsLoading="_logIsLoading"
+                                 TooltipTextKey="EINSTELLUNGEN_LOG_SUCHEN_TOOLTIP"
+                                 ShowTooltip="true"/>
+
+                    <ItreeButton Id="button_clearsearch"
+                                 ShowTooltip="true"
+                                 TooltipTextKey="EINSTELLUNGEN_LOG_FILTER_LOESCHEN_TOOLTIP"
+                                 ButtonTextKey="EINSTELLUNGEN_LOG_FILTER_LOESCHEN"
+                                 Icon="@MudBlazor.Icons.Material.Filled.FilterAltOff"
+                                 OnClick="ClearSearch"
+                                 ShowIcon="true"/>
+
+                    <ItreeButton Id="button_export"
+                                 Type="EnumButton.Exportieren"
+                                 OnClick="Export"
+                                 ButtonTextKey="EINSTELLUNGEN_LOG_EXPORT"
+                                 TooltipTextKey="EINSTELLUNGEN_LOG_EXPORT_TOOLTIP"
+                                 ShowTooltip="true"/>
+
+                    <ItreeButton Id="button_delete"
+                                 Type="EnumButton.Loeschen"
+                                 OnClick="Delete"
+                                 ButtonTextKey="EINSTELLUNGEN_LOG_DELETE"
+                                 TooltipTextKey="EINSTELLUNGEN_LOG_DELETE_TOOLTIP"
+                                 ShowTooltip="true"
+                                 Class="btn-loeschen" />
+                </div>
+            </div>
+        </GridToolBarTemplate>
+        <GridColumns>
+            <ItreeGridColumn Field="Id" Title="@TranslationHelper.Translate("EINSTELLUNGEN_LOG_ID")" />
+            @* Zusätzlicher Spaltenfilter auf das Level, ergänzend zur serverseitigen Suche *@
+            <ItreeGridColumn Field="Level" Title="@TranslationHelper.Translate("EINSTELLUNGEN_LOG_LEVEL")">
+                <FilterMenuTemplate>
+                    <ItreeFilterCheckboxList Items="LevelFilterEintraege" SelectedKeys="_filterLevelAuswahl" IdPrefix="level" />
+                </FilterMenuTemplate>
+                <FilterMenuButtonsTemplate Context="filter">
+                    <ItreeFilterButtons OnFilter="@(() => MultiFilterAsync(filter, nameof(Log.Level), _filterLevelAuswahl))"
+                                        OnClear="@(() => MultiClearFilterAsync(filter, _filterLevelAuswahl))" />
+                </FilterMenuButtonsTemplate>
+            </ItreeGridColumn>
+            <ItreeGridColumn Field="Message" Title="@TranslationHelper.Translate("EINSTELLUNGEN_LOG_MESSAGE")" />
+            <ItreeGridColumn Title="@TranslationHelper.Translate("EINSTELLUNGEN_LOG_EXCEPTION")">
+                <Template>
+                    @if (!string.IsNullOrEmpty(context.Exception))
+                    {
+                        <span class="cursor-pointer" @onclick="@(() => ShowException(context.Exception))">
+                            @Kuerzen(context.Exception)
+                        </span>
+                    }
+                </Template>
+            </ItreeGridColumn>
+            <ItreeGridColumn Field="TimeStamp" Title="@TranslationHelper.Translate("EINSTELLUNGEN_LOG_TIMESTAMP")">
+                <Template>
+                    @context.TimeStamp.FormatDateTime(null, "s")
+                </Template>
+            </ItreeGridColumn>
+        </GridColumns>
+    </ItreeGrid>
+
+    <ConfirmDialog IsVisible="@_isVisibleDeleteConfirm" CheckHandler="@DeleteConfirm" Type="EnumConfirmType.Delete" TranslationKey="EINSTELLUNGEN_LOG_DELETE_CONFIRM"/>
+
+    @if (_isVisibleException)
+    {
+        <ItreeWindow @bind-Visible="_isVisibleException" MaxWidth="MaxWidth.Large">
+            <WindowTitle>
+                <strong><ItreeTranslation Key="EINSTELLUNGEN_LOG_EXCEPTION_TITLE"/></strong>
+            </WindowTitle>
+            <WindowContent>
+                <code>
+                    @_exception
+                </code>
+            </WindowContent>
+            <WindowFooter>
+                <ItreeButton Type="EnumButton.Kopieren" OnClick="@(() => CopyToClipboard(JsRuntime, _exception!))"/>
+            </WindowFooter>
+        </ItreeWindow>
+    }
+}
+
+@code {
+    private const int MaxZeilenStandard = 1000;
+
+    // Ab dieser Länge wird der Stacktrace in der Zelle abgeschnitten; der volle Text steht im Popup.
+    private const int MaxLaengeException = 250;
+
+    // Serilog-Level in aufsteigender Schwere; der Key entspricht dem LogEventLevel des Frameworks.
+    private static readonly List<KeyValuePair<int, string>> LogLevel =
+    [
+        new(0, "Verbose"),
+        new(1, "Debug"),
+        new(2, "Information"),
+        new(3, "Warning"),
+        new(4, "Error"),
+        new(5, "Fatal")
+    ];
+
+    // Suchfilter; der Key ist der Index in dieser Liste. Eintrag 0 steht für alle Stufen: den Wert "All"
+    // erwartet der LogService, angezeigt wird er als «Alle».
+    private static readonly List<KeyValuePair<int, string>> FilterLogLevel =
+    [
+        new(0, "All"),
+        new(1, "Verbose"),
+        new(2, "Debug"),
+        new(3, "Information"),
+        new(4, "Warning"),
+        new(5, "Error"),
+        new(6, "Fatal")
+    ];
+
+    private static readonly Dictionary<string, string> LevelFilterEintraege = LogLevel.ToDictionary(e => e.Value, e => e.Value);
+
+    private bool _fokusGesetzt;
+    private bool _isVisibleDeleteConfirm;
+    private bool _isVisibleException;
+    private bool _logIsLoading;
+
+    private int _filterLogLevel;
+    private int _logLevel;
+    private int _maxZeilen = MaxZeilenStandard;
+
+    private string _suchtext = string.Empty;
+
+    private string? _exception;
+
+    private DateTime? _bis;
+    private DateTime? _von;
+
+    private IList<Log>? _dataList;
+
+    private List<string> _filterLevelAuswahl = new();
+
+    private static string Kuerzen(string text) =>
+        text.Length <= MaxLaengeException ? text : text[..MaxLaengeException] + "[...]";
+
+    /// <summary>Setzt das eingestellte Mindest-Loglevel zur Laufzeit.</summary>
+    private void SendLogLevel() => LogService.SetLogLevel(_logLevel);
+
+    protected override async Task OnInitializedAsync()
+    {
+        SetzeFilterZurueck();
+        await GetLogData();
+    }
+
+    // Kein Fokus in OnInitialized: Beim Direktaufruf der URL wird die Seite prerendert, JS-Interop ist dort
+    // nicht möglich. Der erste Render zeigt zudem nur den Spinner — das Feld gibt es erst mit den Logzeilen.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_fokusGesetzt && _dataList != null)
+        {
+            _fokusGesetzt = true;
+            await FocusElementById(JsRuntime, "numericbox_maxrows");
+        }
+    }
+
+    /// <summary>Lädt die Logzeilen zu den aktuellen Filterkriterien.</summary>
+    private async Task GetLogData()
+    {
+        _logIsLoading = true;
+        _dataList = await LogService.Search(GetSearchParams());
+        _logLevel = LogService.GetLogLevel();
+        _logIsLoading = false;
+        StateHasChanged();
+    }
+
+    private LogSearchParameter GetSearchParams() => new()
+    {
+        MaxRows = _maxZeilen,
+        LogLevel = FilterLogLevel[_filterLogLevel].Value,
+        From = _von,
+        To = _bis,
+        SearchText = _suchtext
+    };
+
+    /// <summary>Setzt die Filterkriterien zurück und fokussiert das erste Feld.</summary>
+    private async Task ClearSearch()
+    {
+        SetzeFilterZurueck();
+        await FocusElementById(JsRuntime, "numericbox_maxrows");
+    }
+
+    private void SetzeFilterZurueck()
+    {
+        _maxZeilen = MaxZeilenStandard;
+        _von = null;
+        _bis = null;
+        _filterLogLevel = 0;
+        _suchtext = string.Empty;
+    }
+
+    /// <summary>Exportiert die Treffer der aktuellen Filterkriterien nach Excel.</summary>
+    private async Task Export()
+    {
+        var id = await LogService.Export(GetSearchParams());
+        await DownloadFileFromStream(JsRuntime, new Guid(id));
+    }
+
+    /// <summary>Zeigt den vollständigen Stacktrace einer Zeile im Popup.</summary>
+    private void ShowException(string? exception)
+    {
+        if (!string.IsNullOrEmpty(exception))
+        {
+            _exception = exception;
+            _isVisibleException = true;
+        }
+    }
+
+    private void Delete()
+    {
+        _isVisibleDeleteConfirm = true;
+        StateHasChanged();
+    }
+
+    private async Task DeleteConfirm(bool loeschen)
+    {
+        if (loeschen)
+        {
+            await LogService.Delete();
+            _dataList = null;
+            await GetLogData();
+        }
+
+        _isVisibleDeleteConfirm = false;
+        StateHasChanged();
+    }
+}

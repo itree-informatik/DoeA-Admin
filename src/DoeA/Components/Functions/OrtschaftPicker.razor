@@ -1,0 +1,68 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Components.Pages.Stammdaten
+@using DoeA.Data.Models.DTO.Stammdaten
+@inherits BaseComponent
+
+@* Label mit der gewählten Ortschaft + Button, der ein Such-/Erfass-Popout öffnet (analog Anbieter-Auswahl). *@
+<div class="d-flex flex-column">
+    @if (!string.IsNullOrEmpty(Label))
+    {
+        <label class="form-label">@Label</label>
+    }
+    <div class="d-flex align-items-center gap-2">
+        <MudTextField T="string" Value="@AnzeigeText" ReadOnly="true" Disabled="true"
+                      Margin="Margin.Dense"
+                      Placeholder="@TranslationHelper.Translate("AUSWAEHLEN")" />
+        <ItreeButton Type="EnumButton.Hinzufuegen" OnClick="@(() => _showPopout = true)" ShowButtonText="false" />
+    </div>
+</div>
+
+@if (_showPopout)
+{
+    <ItreeWindow @bind-Visible="_showPopout" MaxWidth="MaxWidth.Large">
+        <WindowTitle>
+            <strong><ItreeTranslation Key="STAMMDATEN_ANBIETER_ORTSCHAFT" /></strong>
+        </WindowTitle>
+        <WindowContent>
+            <OrtschaftSeite OnSelect="OnOrtschaftSelected" />
+        </WindowContent>
+        <WindowFooter>
+            <ItreeButton Type="EnumButton.Schliessen" OnClick="@(() => _showPopout = false)" />
+        </WindowFooter>
+    </ItreeWindow>
+}
+
+@code {
+    /// <summary>Id der gewählten Ortschaft (Two-Way-Binding via <c>OrtIdChanged</c>).</summary>
+    [Parameter] public Guid OrtId { get; set; }
+
+    /// <summary>Meldet die geänderte Id an den Aufrufer.</summary>
+    [Parameter] public EventCallback<Guid> OrtIdChanged { get; set; }
+
+    /// <summary>Gewählte Ortschaft für die Label-Anzeige (Two-Way-Binding via <c>OrtschaftChanged</c>).</summary>
+    [Parameter] public Ortschaft? Ortschaft { get; set; }
+
+    /// <summary>Meldet die geänderte Ortschaft an den Aufrufer.</summary>
+    [Parameter] public EventCallback<Ortschaft?> OrtschaftChanged { get; set; }
+
+    /// <summary>Beschriftung über dem Feld (leer = kein Label).</summary>
+    [Parameter] public string? Label { get; set; }
+
+    private bool _showPopout;
+
+    private string AnzeigeText => Ortschaft != null
+        ? string.IsNullOrEmpty(Ortschaft.Plz) ? Ortschaft.Ort : $"{Ortschaft.Plz} {Ortschaft.Ort}"
+        : string.Empty;
+
+    private async Task OnOrtschaftSelected(Ortschaft ortschaft)
+    {
+        Ortschaft = ortschaft;
+        OrtId = ortschaft.Id;
+        _showPopout = false;
+
+        await OrtIdChanged.InvokeAsync(OrtId);
+        await OrtschaftChanged.InvokeAsync(Ortschaft);
+    }
+}

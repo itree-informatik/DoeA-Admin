@@ -1,0 +1,28 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@inject INavigationService Navigation
+
+<Router AppAssembly="typeof(Program).Assembly">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            <Authorizing>
+                <ItreeSpinner />
+            </Authorizing>
+            <NotAuthorized Context="state">
+                @* Angemeldet, aber nicht freigeschaltet: Statusseite. Nicht angemeldet (auch nach Invalidierung durch die
+                   Revalidierung): aktuelle URL per Vollreload, dann entscheidet die HTTP-Pipeline — Cookie weg -> eIAM,
+                   Cookie da -> Claims aus der DB korrigiert -> Seite oder /anmeldung. *@
+                @if (state.User.Identity?.IsAuthenticated == true)
+                {
+                    <Umleitung Url="@AnmeldungEndpoints.PfadAnmeldung" />
+                }
+                else
+                {
+                    <Umleitung Url="@Navigation.GetCurrentUri()" />
+                }
+            </NotAuthorized>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+</Router>

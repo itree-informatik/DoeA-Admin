@@ -1,0 +1,27 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@* «Verzögerung durch Auftraggeber»: Label oben (zweizeilig dank fester Breite), Checkbox darunter
+   auf Höhe der Eingabefelder, damit Label und Control mit den übrigen Attributen der Zeile
+   fluchten (Klassen verzoegerung-*, s. app.css). *@
+<div class="d-flex flex-column flex-shrink-0 verzoegerung-feld">
+    <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_VERZOEGERUNGDURCHAUFTRAGGEBER")</label>
+    <div class="verzoegerung-checkbox">
+        <input type="checkbox" class="form-check-input" checked="@Wert" disabled="@(!Enabled)"
+               @onchange="@(e => WertChanged.InvokeAsync((bool)e.Value!))" />
+    </div>
+</div>
+
+@code {
+    /// <summary>Angezeigter Wert.</summary>
+    [Parameter]
+    public bool Wert { get; set; }
+
+    /// <summary>Meldet den geänderten Wert (für @bind-Wert).</summary>
+    [Parameter]
+    public EventCallback<bool> WertChanged { get; set; }
+
+    /// <summary>Erlaubt die Eingabe; Standard true.</summary>
+    [Parameter]
+    public bool Enabled { get; set; } = true;
+}

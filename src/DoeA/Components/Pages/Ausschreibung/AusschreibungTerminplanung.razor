@@ -1,0 +1,385 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@page "/ausschreibung/{AusId:guid}/terminplanung"
+@using System.Collections.ObjectModel
+@using DoeA.Data.Models.DTO
+@using DoeA.Data.Models.DTO.Stammdaten
+@using DoeA.Interfaces.Auswertungen
+@using DoeA.Interfaces.Stammdaten
+@using DoeA.Services
+@using DoeA.Validator
+@using ItreeMud.Models
+
+@inherits BaseComponent
+@implements IDisposable
+
+@layout AusschreibungLayout
+
+@inject IAusschreibungVerfahrensschrittService AusschreibungVerfahrensschrittService
+@inject IVerfahrensschrittService VerfahrensschrittService
+@inject IAuswertungService AuswertungService
+@inject IJSRuntime JsRuntime
+@inject AusschreibungEditState EditState
+@inject ConfirmService ConfirmService
+
+@if (_isLoading)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <ItreeGrid TItem="AusschreibungVerfahrensschritt" Data="_verfahrensschritteDerAusschreibung"
+               Sortable="true" FilterMode="ItreeGridFilterMode.FilterMenu"
+               OnRowClick="@(args => OnRowClick((AusschreibungVerfahrensschritt)args.Item))" OnRowRender="ZeilenKlasse">
+        <GridColumns>
+            <ItreeGridColumn Field="Verfahrensschritt.Bezeichnung" Title="@TranslationHelper.Translate("AUSSCHREIBUNG_TERMINPLANUNG_VERFAHRENSSCHRITT")" />
+            <ItreeGridColumn Field="DatumVon" Title="@TranslationHelper.Translate("AUSSCHREIBUNG_TERMINPLANUNG_DATUMVON")" />
+            <ItreeGridColumn Field="DatumBis" Title="@TranslationHelper.Translate("AUSSCHREIBUNG_TERMINPLANUNG_DATUMBIS")" />
+            <ItreeGridColumn Field="Dauer" Title="@TranslationHelper.Translate("AUSSCHREIBUNG_TERMINPLANUNG_DAUER")" />
+        </GridColumns>
+    </ItreeGrid>
+    <div class="d-flex mt-2">
+        <span class="cpv-badge cpv-add-chip d-flex align-items-center" @onclick="AddVerfahrensschritt">
+            <i class="bi bi-plus-circle me-1"></i> @TranslationHelper.Translate("AUSSCHREIBUNG_TERMINPLANUNG_HINZUFUEGEN")
+        </span>
+    </div>
+    @if (_selectedItem != null)
+    {
+        <EditForm EditContext="@_editContext">
+            <ItreeFluentValidationValidator Validator="@(new AusschreibungVerfahrensschrittValidator(true, _verfahrensschritteDerAusschreibung))" />
+            <div class="box shadow  mt-2 mb-2">
+                <div class="d-flex justify-content-between mb-2">
+                    <div class="d-flex flex-column field-xlarge">
+                        <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_TERMINPLANUNG_VERFAHRENSSCHRITT")</label>
+                        <ItreeComboBox TItem="Verfahrensschritt" TValue="Guid?" Data="_verfahrensschritte" TextField="Bezeichnung" ValueField="Id"
+                                       Value="@(_selectedItem!.VesId == Guid.Empty ? null : (Guid?)_selectedItem.VesId)"
+                                       ValueChanged="@VerfahrensschrittChanged"
+                                       DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" Clearable="true" />
+                        <ValidationMessage For="() => _selectedItem!.VesId" />
+                    </div>
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_TERMINPLANUNG_DATUMVON")</label>
+                        <ItreeDatePicker TValue="DateOnly?" Value="@_selectedItem!.DatumVon"
+                                         ValueChanged="@((DateOnly? val) => { _selectedItem!.DatumVon = val; OnDatePickerValueChanged(); })"
+                                         Clearable="true" Class="datepicker-schmal" />
+                        <ValidationMessage For="() => _selectedItem!.DatumVon" />
+                    </div>
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_TERMINPLANUNG_DATUMBIS")</label>
+                        <ItreeDatePicker TValue="DateOnly?" Value="@_selectedItem!.DatumBis"
+                                         ValueChanged="@((DateOnly? val) => { _selectedItem!.DatumBis = val; OnDatePickerValueChanged(); })"
+                                         Clearable="true" Class="datepicker-schmal" />
+                        <ValidationMessage For="() => _selectedItem!.DatumBis" />
+                    </div>
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_TERMINPLANUNG_DAUER")</label>
+                        <label class="form-label">@_selectedItem.Dauer</label>
+                    </div>
+                    @* Kein Schliessen-Button: Zuklappen erfolgt über erneuten Klick auf die Zeile. *@
+                    <div class="d-flex flex-column justify-content-end">
+                        <span class="cpv-badge cpv-delete-chip d-flex align-items-center text-nowrap @(_buttonLoading ? "cpv-chip-disabled" : null)" @onclick="RemoveSelected">
+                            <i class="bi bi-trash me-1"></i> @TranslationHelper.Translate("BUTTON_LOESCHEN")
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </EditForm>
+    }
+
+    <ItreeButtonGroup Position="EnumButtonGroupPosition.Rechts" CustomClass="buttongroup-vollbreit mt-4">
+        @* Drucken nur ohne pendente Änderungen: das PDF wird aus den gespeicherten Daten erstellt *@
+        <ItreeButton Icon="@MudBlazor.Icons.Material.Filled.PictureAsPdf"
+                     ButtonTextKey="AUSSCHREIBUNG_TERMINPLANUNG_PDF_ERSTELLEN"
+                     ShowButtonText="true"
+                     OnClick="Drucken"
+                     Enabled="@(!HasChanges() && !_buttonLoading)"
+                     SpinnerIsLoading="@_buttonDruckenLoading" />
+        <ItreeButton Type="EnumButton.Speichern" OnClick="Save"
+                     Enabled="@(HasChanges() && !_buttonLoading)" SpinnerIsLoading="@_buttonLoading" />
+    </ItreeButtonGroup>
+}
+
+@code {
+    /// <summary>Id der Ausschreibung aus der Route (die Daten kommen über den CascadingParameter).</summary>
+    [Parameter]
+    public Guid AusId { get; set; }
+
+    /// <summary>Vom Layout geteilte Ausschreibung, zu der die Termine gehören.</summary>
+    [CascadingParameter]
+    public Ausschreibung? Ausschreibung { get; set; }
+
+    private bool _buttonDruckenLoading;
+    private bool _buttonLoading;
+    private bool _isLoading = true;
+
+    // Löst nach dem nächsten Render eine Validierung der offenen Edit-Form aus (Inline-Hinweise).
+    private bool _validatePending;
+
+    private EditContext? _editContext;
+
+    // Snapshot des gesamten Tab-Inhalts zur Erkennung pendenter Änderungen.
+    private List<AusschreibungVerfahrensschritt> _original = new();
+
+    private List<Verfahrensschritt> _verfahrensschritte = new();
+
+    private ObservableCollection<AusschreibungVerfahrensschritt> _verfahrensschritteDerAusschreibung = new();
+
+    private AusschreibungVerfahrensschritt? _selectedItem;
+
+    private void SnapshotOriginal() => _original = _verfahrensschritteDerAusschreibung.Select(x => x.Clone()!).ToList();
+
+    private void ZeilenKlasse(ItreeGridRowRenderEventArgs args) =>
+        args.Class = _selectedItem?.Id == ((AusschreibungVerfahrensschritt)args.Item).Id ? "row-selected" : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _verfahrensschritteDerAusschreibung = await AusschreibungVerfahrensschrittService.Load(Ausschreibung!.Id);
+        _verfahrensschritte = (await VerfahrensschrittService.Search("", true)).ToList();
+        SnapshotOriginal();
+        EditState.Register(HasChanges);
+        _isLoading = false;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (_validatePending)
+        {
+            // Jetzt ist der Validator der gerenderten Edit-Form am EditContext angemeldet.
+            _validatePending = false;
+            _editContext?.Validate();
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>Pendente Änderungen im gesamten Tab gegenüber dem zuletzt geladenen/gespeicherten Stand.</summary>
+    private bool HasChanges()
+    {
+        if (_original.Count != _verfahrensschritteDerAusschreibung.Count)
+        {
+            return true;
+        }
+
+        var originalNachId = _original.ToDictionary(x => x.Id);
+        foreach (var item in _verfahrensschritteDerAusschreibung)
+        {
+            // Unbekannte Id = neuer Datensatz, abweichende Werte = geänderter Datensatz.
+            if (!originalNachId.TryGetValue(item.Id, out var original) || !item.IsEqual(original))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void AddVerfahrensschritt()
+    {
+        // Neuer Termin erst möglich, wenn alle bestehenden Einträge gültig sind.
+        if (ZeigeUngueltigenEintragFalls())
+        {
+            return;
+        }
+
+        // Guid sofort vergeben, damit der Datensatz im Speicher eindeutig ist und beim Speichern als Insert erkannt wird.
+        var model = new AusschreibungVerfahrensschritt
+        {
+            Id = Guid.NewGuid(),
+            AusId = Ausschreibung!.Id,
+            Aktiv = true
+        };
+        _verfahrensschritteDerAusschreibung.Add(model);
+        SelectVerfahrensschritt(model);
+        // Pflichtfeld-Hinweise nach dem Render anzeigen (Validator abonniert den EditContext erst beim Rendern).
+        _validatePending = true;
+    }
+
+    /// <summary>Zeigt einen ungültigen Eintrag inline an (Auswahl + Validierungsmeldungen); true, wenn einer existiert.</summary>
+    private bool ZeigeUngueltigenEintragFalls()
+    {
+        var validator = new AusschreibungVerfahrensschrittValidator(true, _verfahrensschritteDerAusschreibung);
+        // Der ausgewählte Eintrag zuerst: bei einem doppelten Verfahrensschritt bleibt der bearbeitete markiert, nicht die erste Fundstelle.
+        var invalid = _selectedItem != null && !validator.Validate(_selectedItem).IsValid
+            ? _selectedItem
+            : _verfahrensschritteDerAusschreibung.FirstOrDefault(v => !validator.Validate(v).IsValid);
+        if (invalid == null)
+        {
+            return false;
+        }
+
+        SelectVerfahrensschritt(invalid);
+        _validatePending = true;
+        StateHasChanged();
+        return true;
+    }
+
+    /// <summary>Zeilenklick: erneuter Klick auf die ausgewählte Zeile schliesst das Bearbeiten-Formular.</summary>
+    private void OnRowClick(AusschreibungVerfahrensschritt model)
+    {
+        if (_selectedItem != null && _selectedItem.Id == model.Id)
+        {
+            Deselect();
+            return;
+        }
+
+        SelectVerfahrensschritt(model);
+    }
+
+    private void SelectVerfahrensschritt(AusschreibungVerfahrensschritt? model)
+    {
+        if (model == null)
+        {
+            return;
+        }
+
+        // Wechsel auf einen anderen Eintrag: einen ungültigen, noch nie gespeicherten Eintrag nicht als Phantom-Zeile zurücklassen.
+        if (!ReferenceEquals(_selectedItem, model))
+        {
+            VerwerfeUngueltigenNeuenEintrag();
+        }
+
+        // Direkte Referenz auf das Collection-Item: Änderungen wirken sofort in der Liste (kein separates Speichern pro Zeile).
+        _selectedItem = model;
+        _editContext = new(_selectedItem);
+        StateHasChanged();
+    }
+
+    private void Deselect()
+    {
+        VerwerfeUngueltigenNeuenEintrag();
+        _selectedItem = null;
+        _editContext = null;
+    }
+
+    /// <summary>
+    /// Entfernt den aktuell ausgewählten Eintrag, wenn er neu (noch nicht gespeichert) und ungültig ist.
+    /// Verhindert, dass ein leerer/unvollständiger neuer Eintrag beim Schliessen als nicht speicherbare
+    /// Phantom-Zeile zurückbleibt (blockiert sonst das Hinzufügen und erzeugt eine pendente Änderung).
+    /// </summary>
+    private void VerwerfeUngueltigenNeuenEintrag()
+    {
+        if (_selectedItem == null)
+        {
+            return;
+        }
+
+        var istNeu = _original.All(o => o.Id != _selectedItem.Id);
+        var istUngueltig = !new AusschreibungVerfahrensschrittValidator(true, _verfahrensschritteDerAusschreibung).Validate(_selectedItem).IsValid;
+        if (istNeu && istUngueltig)
+        {
+            _verfahrensschritteDerAusschreibung.Remove(_selectedItem);
+        }
+    }
+
+    /// <summary>Entfernt den ausgewählten Datensatz nur im Speicher; persistiert wird erst beim Speichern.</summary>
+    private void RemoveSelected()
+    {
+        if (_selectedItem == null)
+        {
+            return;
+        }
+
+        var item = _selectedItem;
+
+        // Vor dem Entfernen einen Hinweis anzeigen.
+        ConfirmService.ShowDeleteConfirm(async confirmed =>
+        {
+            if (confirmed)
+            {
+                _verfahrensschritteDerAusschreibung.Remove(item);
+                _selectedItem = null;
+                _editContext = null;
+            }
+            await InvokeAsync(StateHasChanged);
+        });
+    }
+
+    private async Task Save()
+    {
+        // Ungültige Einträge zuerst inline anzeigen statt eine nichtssagende Fehlermeldung beim Server-Save zu provozieren.
+        if (ZeigeUngueltigenEintragFalls())
+        {
+            return;
+        }
+
+        _buttonLoading = true;
+        StateHasChanged();
+
+        ObservableCollection<AusschreibungVerfahrensschritt>? saved = null;
+        await ErrorHandler.HandleAsync(async () =>
+        {
+            saved = await AusschreibungVerfahrensschrittService.SaveAll(Ausschreibung!.Id, _verfahrensschritteDerAusschreibung);
+            return new ServiceResult<AusschreibungVerfahrensschritt>();
+        });
+
+        if (saved != null)
+        {
+            _verfahrensschritteDerAusschreibung = saved;
+            Deselect();
+            SnapshotOriginal();
+        }
+
+        _buttonLoading = false;
+        StateHasChanged();
+    }
+
+    // Erstellt den Terminplan als PDF (Vorlage Terminplan.dotx) und lädt ihn herunter.
+    private async Task Drucken()
+    {
+        _buttonDruckenLoading = true;
+        StateHasChanged();
+
+        await ErrorHandler.HandleAsync(async () =>
+        {
+            var id = await AuswertungService.GetTerminplanAsync(Ausschreibung!.Id);
+            await DownloadFileFromStream(JsRuntime, new Guid(id));
+            return new ServiceResult<AusschreibungVerfahrensschritt>();
+        });
+
+        _buttonDruckenLoading = false;
+        StateHasChanged();
+    }
+
+    private void VerfahrensschrittChanged(Guid? vesId)
+    {
+        if (vesId == null)
+        {
+            _selectedItem!.Verfahrensschritt = new Verfahrensschritt();
+            _selectedItem.VesId = Guid.Empty;
+        }
+        else
+        {
+            _selectedItem!.Verfahrensschritt = _verfahrensschritte.Single(v => v.Id == vesId.Value);
+            _selectedItem.VesId = vesId.Value;
+        }
+        // EditContext wird vom MudSelect nicht notifiziert -> Inline-Meldungen explizit aktualisieren.
+        _editContext?.Validate();
+        StateHasChanged();
+    }
+
+    /// <summary>Hält Von/Bis konsistent: das jeweils andere Feld wandert mit, statt ungültig zu werden.</summary>
+    private void OnDatePickerValueChanged()
+    {
+        if (_selectedItem == null)
+        {
+            return;
+        }
+
+        if (_selectedItem.DatumVon > _selectedItem.DatumBis)
+        {
+            _selectedItem.DatumBis = _selectedItem.DatumVon;
+        }
+        else if (_selectedItem.DatumBis < _selectedItem.DatumVon)
+        {
+            _selectedItem.DatumVon = _selectedItem.DatumBis;
+        }
+        // EditContext wird vom MudDatePicker nicht notifiziert -> Inline-Meldungen explizit aktualisieren.
+        _editContext?.Validate();
+    }
+
+    /// <summary>Meldet die Änderungsprüfung dieses Tabs beim Navigations-Guard ab.</summary>
+    public void Dispose()
+    {
+        EditState.Unregister(HasChanges);
+    }
+}

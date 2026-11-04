@@ -1,0 +1,210 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Interfaces.Auswertungen
+@using DoeA.Data.Models.DTO.Auswertungen
+@using DoeA.Data.Models.DTO.Stammdaten
+@inject IAuswertungService AuswertungService
+@inject IJSRuntime JsRuntime
+@inherits BaseComponent
+
+<TileTitle TitleKey="AUSWERTUNG_TILE_ZUSCHLAEGE"/>
+
+@if (_isLoading)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <TileDatumBereich LabelKey="AUSWERTUNG_TILE_ZUSCHLAEGE_PUBLIKATIONSDATUM"
+                      @bind-Von="_datumVon" @bind-Bis="_datumBis" />
+
+    <div class="d-flex d-flex-column gap-3">
+        <div class="tile-label">
+            <label class="form-label">@TranslationHelper.Translate("AUSWERTUNG_TILE_ZUSCHLAEGE_VERFAHRENSART")</label>
+        </div>
+        <TileCheckbox @bind-Wert="_isOffen" LabelKey="AUSWERTUNG_TILE_ZUSCHLAEGE_VERFAHRENSART_OFFEN" />
+        <TileCheckbox @bind-Wert="_isSelektiv" LabelKey="AUSWERTUNG_TILE_ZUSCHLAEGE_VERFAHRENSART_SELEKTIV" />
+        <TileCheckbox @bind-Wert="_isFreihaendig" LabelKey="AUSWERTUNG_TILE_ZUSCHLAEGE_VERFAHRENSART_FREIHAENDIG" />
+    </div>
+
+    <div class="d-flex d-flex-column gap-3">
+        <div class="tile-label">
+            <label class="form-label">@TranslationHelper.Translate("AUSWERTUNG_TILE_ZUSCHLAEGE_PROJEKTART")</label>
+        </div>
+        <TileCheckbox @bind-Wert="_isLogistik" LabelKey="AUSWERTUNG_TILE_ZUSCHLAEGE_PROJEKTART_LOGISTIK" />
+        <TileCheckbox @bind-Wert="_isBau" LabelKey="AUSWERTUNG_TILE_ZUSCHLAEGE_PROJEKTART_BAU" />
+    </div>
+
+    <div class="d-flex d-flex-column gap-3">
+        <div class="tile-label">
+            <label class="form-label">@TranslationHelper.Translate("AUSWERTUNG_TILE_ZUSCHLAEGE_ROLLE_BBL")</label>
+        </div>
+        <TileCheckbox @bind-Wert="_isMeldestelle" LabelKey="AUSWERTUNG_TILE_ZUSCHLAEGE_ROLLE_BBL_MELDESTELLE" />
+        <TileCheckbox @bind-Wert="_isVergabestelle" LabelKey="AUSWERTUNG_TILE_ZUSCHLAEGE_ROLLE_BBL_VERGABESTELLE" />
+    </div>
+
+    <SelectAemter @ref="_selectAemter"/>
+
+    <div class="d-flex d-flex-column align-items-start mb-3">
+        <div class="tile-label">
+            <label class="form-label pt-1">@TranslationHelper.Translate("AUSWERTUNG_TILE_ZUSCHLAEGE_CPVNUMMERN")</label>
+        </div>
+        <MudTextField T="string" @bind-Value="@_cpvNummern" Lines="3" Class="w-100"
+                      Placeholder="@TranslationHelper.Translate("AUSWERTUNG_TILE_ZUSCHLAEGE_CPVNUMMERN_PLACEHOLDER")" />
+    </div>
+
+    <div class="d-flex d-flex-column align-items-start mb-3">
+        <div class="tile-label">
+            <label class="form-label pt-1">@TranslationHelper.Translate("AUSWERTUNG_TILE_ZUSCHLAEGE_BKPNUMMERN")</label>
+        </div>
+        <MudTextField T="string" @bind-Value="@_bkpNummern" Lines="3" Class="w-100"
+                      Placeholder="@TranslationHelper.Translate("AUSWERTUNG_TILE_ZUSCHLAEGE_BKPNUMMERN_PLACEHOLDER")" />
+    </div>
+
+    <div class="d-flex d-flex-column gap-3 align-items-start mb-3">
+        <div class="tile-label">
+            <label class="form-label pt-1">@TranslationHelper.Translate("AUSWERTUNG_TILE_ZUSCHLAEGE_NACH")</label>
+        </div>
+        <MudRadioGroup T="int?" @bind-Value="@_gruppierung">
+            @foreach (var item in _gruppierungItems)
+            {
+                <MudRadio T="int?" Value="@item.Id" Dense="true" Class="mr-6">@item.Text</MudRadio>
+            }
+        </MudRadioGroup>
+    </div>
+
+    <div class="d-flex d-flex-column gap-3 mb-1">
+        <div class="tile-label">
+            <label class="form-label">@TranslationHelper.Translate("AUSWERTUNG_TILE_ZUSCHLAEGE_MITBETRAG")</label>
+        </div>
+        <MudCheckBox T="bool" @bind-Value="@_isMitBetrag" Dense="true" Class="ma-0" />
+    </div>
+    <div class="d-flex d-flex-column gap-2">
+        <ItreeButton Icon="@MudBlazor.Icons.Material.Filled.PictureAsPdf"
+                     ButtonTextKey="AUSWERTUNG_TILE_ABBRUCHWIDERRUF_PDF_ERSTELLEN"
+                     ShowButtonText="true"
+                     OnClick="CreatePdf"
+                     Enabled="@(IstGueltig && !IstAmErstellen)"
+                     SpinnerIsLoading="@_isCreatingPdf"/>
+        <ItreeButton Icon="@MudBlazor.Icons.Material.Filled.TableChart"
+                     ButtonTextKey="AUSWERTUNG_TILE_ABBRUCHWIDERRUF_EXCEL_ERSTELLEN"
+                     ShowButtonText="true"
+                     OnClick="CreateExcel"
+                     Enabled="@(IstGueltig && !IstAmErstellen)"
+                     SpinnerIsLoading="@_isCreatingExcel"/>
+    </div>
+}
+
+@code {
+    /// <summary>Meldet der Seite, dass sich der Filter geändert hat.</summary>
+    [Parameter]
+    public EventCallback Refresh { get; set; }
+
+    private const int GruppierungKanton = 1;
+    private const int GruppierungSprache = 2;
+
+    private bool _isBau;
+    private bool _isCreatingExcel;
+    private bool _isCreatingPdf;
+    private bool _isFreihaendig;
+    private bool _isLoading = true;
+    private bool _isLogistik = true;
+    private bool _isMeldestelle = true;
+    private bool _isMitBetrag = true;
+    private bool _isOffen = true;
+    private bool _isSelektiv;
+    private bool _isVergabestelle = true;
+
+    private int? _gruppierung = GruppierungKanton;
+
+    private string _bkpNummern = string.Empty;
+    private string _cpvNummern = string.Empty;
+
+    private DateTime? _datumBis = DateTime.Now;
+    private DateTime? _datumVon = new DateTime(DateTime.Now.Year, 1, 1);
+
+    private List<RadioGroupItem> _gruppierungItems = new();
+
+    private SelectAemter? _selectAemter;
+
+    private bool IstAmErstellen => _isCreatingPdf || _isCreatingExcel;
+
+    // Aus jeder der drei Filtergruppen muss mindestens ein Wert gewählt sein, sonst wäre die
+    // Ergebnismenge zwangsläufig leer.
+    private bool IstGueltig =>
+        (_isOffen || _isSelektiv || _isFreihaendig) &&
+        (_isLogistik || _isBau) &&
+        (_isMeldestelle || _isVergabestelle) &&
+        TileDatumBereich.IstGueltig(_datumVon, _datumBis);
+
+    protected override void OnInitialized()
+    {
+        _gruppierungItems =
+        [
+            new RadioGroupItem
+            {
+                Text = TranslationHelper.Translate("AUSWERTUNG_TILE_ZUSCHLAEGE_NACH_KANTON"),
+                Id = GruppierungKanton
+            },
+            new RadioGroupItem
+            {
+                Text = TranslationHelper.Translate("AUSWERTUNG_TILE_ZUSCHLAEGE_NACH_SPRACHE"),
+                Id = GruppierungSprache
+            }
+        ];
+
+        _isLoading = false;
+    }
+
+    private async Task CreatePdf() => await Create(false);
+
+    private async Task CreateExcel() => await Create(true);
+
+    private async Task Create(bool excel)
+    {
+        if (!IstGueltig || IstAmErstellen)
+        {
+            return;
+        }
+
+        if (excel)
+        {
+            _isCreatingExcel = true;
+        }
+        else
+        {
+            _isCreatingPdf = true;
+        }
+
+        StateHasChanged();
+
+        await ErrorHandler.HandleAsync(async () =>
+        {
+            var parameter = new ZuschlaegeParameter
+            {
+                DatumVon = DateOnly.FromDateTime(_datumVon!.Value),
+                DatumBis = DateOnly.FromDateTime(_datumBis!.Value),
+                Offen = _isOffen,
+                Selektiv = _isSelektiv,
+                Freihaendig = _isFreihaendig,
+                Logistik = _isLogistik,
+                Bau = _isBau,
+                Meldestelle = _isMeldestelle,
+                Vergabestelle = _isVergabestelle,
+                CpvNummern = _cpvNummern,
+                BkpNummern = _bkpNummern,
+                Kanton = _gruppierung == GruppierungKanton,
+                MitBetrag = _isMitBetrag,
+                Dep = _selectAemter!.Departement,
+                Aemter = _selectAemter.Aemter,
+                Excel = excel
+            };
+            var id = await AuswertungService.GetZuschlaegeAsync(parameter);
+            await DownloadFileFromStream(JsRuntime, new Guid(id));
+        });
+
+        _isCreatingPdf = false;
+        _isCreatingExcel = false;
+    }
+}

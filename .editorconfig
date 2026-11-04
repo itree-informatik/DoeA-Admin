@@ -1,0 +1,12 @@
+root = true
+
+[*.cs]
+# Namespaces werden dateiweit deklariert (spart eine Einrückungsebene). Gilt für das ganze Repo;
+# Verstösse meldet "dotnet format style --diagnostics IDE0161".
+csharp_style_namespace_declarations = file_scoped:suggestion
+
+# Mapperly: Ein DTO-Property ohne Zuordnung ist ein Fehler, kein Hinweis — sonst geht ein neues
+# Feld stillschweigend beim Laden oder Speichern verloren (RMG012 Ziel, RMG020 Quelle, RMG066 leer).
+dotnet_diagnostic.RMG012.severity = error
+dotnet_diagnostic.RMG020.severity = error
+dotnet_diagnostic.RMG066.severity = error

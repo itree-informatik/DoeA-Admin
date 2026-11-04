@@ -1,0 +1,678 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@page "/exportgruppe/{ExpId:guid}"
+@using DoeA.Data.Models.DTO
+@using DoeA.Data.Models.DTO.Exportgruppen
+@using DoeA.Data.Models.DTO.Stammdaten
+@using DoeA.Interfaces.Stammdaten
+@using DoeA.Services
+@using DoeA.Validator
+
+@inherits BaseComponent
+
+@inject IExportgruppeService ExportgruppeService
+@inject IExportToExcelService ExportToExcelService
+@inject IAusschreibungService AusschreibungService
+@inject IAmtService AmtService
+@inject IKantonService KantonService
+@inject ILeistungsartService LeistungsartService
+@inject IProjektartService ProjektartService
+@inject IRessortService RessortService
+@inject IRolleInAusschreibungService RolleInAusschreibungService
+@inject ISachbearbeiterService SachbearbeiterService
+@inject IVerfahrensartService VerfahrensartService
+@inject ConfirmService ConfirmService
+@inject INavigationService NavigationService
+@inject AusschreibungHerkunftState HerkunftState
+@inject IJSRuntime JsRuntime
+
+<ItreeSiteTitle TranslationKey="EXPORTGRUPPE" />
+
+@if (_isLoading)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <EditForm Model="@_exportgruppe" OnValidSubmit="Save">
+        <ItreeFluentValidationValidator Validator="_validator" />
+
+        <div class="mt-4 inhalt-eingerueckt">
+            @* Titelzeile: editierbarer Name links (Klick öffnet das Eingabefeld, Blur/Enter
+               wechselt zurück und speichert den geänderten Namen — nur mit gültigem Namen),
+               Aktionen rechts *@
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+                @if (_nameBearbeiten)
+                {
+                    <div class="d-flex flex-column field-xlarge">
+                        <MudTextField T="string" MaxLength="1000" @bind-Value="_exportgruppe!.Name"
+                                      Immediate="true" AutoFocus="true"
+                                      Class="exportgruppe-name-eingabe"
+                                      OnBlur="NameBearbeitenBeenden"
+                                      OnKeyUp="NameKeyUp" />
+                        <ValidationMessage For="() => _exportgruppe!.Name" />
+                    </div>
+                }
+                else
+                {
+                    <div class="cursor-pointer d-inline-block"
+                         title="@TranslationHelper.Translate("EXPORTGRUPPE_NAME_BEARBEITEN")"
+                         @onclick="@(() => _nameBearbeiten = true)">
+                        <MudText Typo="Typo.h5">@_exportgruppe!.Name</MudText>
+                    </div>
+                }
+                <div class="d-flex gap-2">
+                    <ItreeButton Icon="@Icons.Material.Filled.ArrowBack"
+                                 ButtonTextKey="EXPORTGRUPPE_ZURUECK"
+                                 ShowButtonText="true"
+                                 OnClick="@(() => NavigationService.NavigateTo("exportgruppen"))" />
+                    @if (_exportgruppe!.Id != Guid.Empty)
+                    {
+                        <ItreeButton Icon="@Icons.Material.Filled.ContentCopy"
+                                     ButtonTextKey="EXPORTGRUPPE_DUPLIZIEREN"
+                                     ShowButtonText="true"
+                                     OnClick="Duplizieren"
+                                     Enabled="@(!_isSaving)" />
+                        <ItreeButton Type="EnumButton.Loeschen"
+                                     OnClick="DeleteExportgruppe"
+                                     SpinnerIsLoading="@_isDeleting"
+                                     Class="btn-loeschen" />
+                    }
+                </div>
+            </div>
+
+            @* Filterbereich: bei bestehenden Gruppen standardmässig eingeklappt *@
+            <div class="abschnitt-kopf mb-2"
+                 @onclick="@(() => _filterAufgeklappt = !_filterAufgeklappt)">
+                <MudText Typo="Typo.h6">@TranslationHelper.Translate("EXPORTGRUPPE_FILTER")</MudText>
+                <MudIcon Icon="@(_filterAufgeklappt ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)" />
+            </div>
+
+            @if (_filterAufgeklappt)
+            {
+                @* Skalarfilter: max. 4 pro Zeile, kein horizontales Scrollen *@
+                <div class="mb-3 filter-raster">
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("EXPORTGRUPPE_JAHR")</label>
+                        <ItreeDropDownList TItem="int" TValue="int?" Data="_jahre" @bind-Value="_exportgruppe!.Jahr"
+                                           DefaultText="@TranslationHelper.Translate("EXPORTGRUPPE_EGAL")" />
+                    </div>
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("EXPORTGRUPPE_ABSCHLUSSJAHR")</label>
+                        <ItreeDropDownList TItem="int" TValue="int?" Data="_abschlussJahre" @bind-Value="_exportgruppe!.AbschlussJahr"
+                                           DefaultText="@TranslationHelper.Translate("EXPORTGRUPPE_EGAL")" />
+                    </div>
+                    <TriStateSelect Label="@TranslationHelper.Translate("EXPORTGRUPPE_PERSONALVERLEIH")" @bind-Value="_exportgruppe!.Personalverleih" />
+                    <TriStateSelect Label="@TranslationHelper.Translate("EXPORTGRUPPE_ABGESCHLOSSEN")" @bind-Value="_exportgruppe!.Abgeschlossen" />
+                    <TriStateSelect Label="@TranslationHelper.Translate("EXPORTGRUPPE_BESCHAFFUNGDEZENTRAL")" @bind-Value="_exportgruppe!.BeschaffungDezentral" />
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("EXPORTGRUPPE_PUBLIKATIONVON")</label>
+                        <ItreeDatePicker TValue="DateOnly?" Value="@_exportgruppe!.PublikationVon"
+                                         ValueChanged="@((DateOnly? val) => _exportgruppe!.PublikationVon = val)"
+                                         Clearable="true" Class="datepicker-schmal" />
+                    </div>
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("EXPORTGRUPPE_PUBLIKATIONBIS")</label>
+                        <ItreeDatePicker TValue="DateOnly?" Value="@_exportgruppe!.PublikationBis"
+                                         ValueChanged="@((DateOnly? val) => _exportgruppe!.PublikationBis = val)"
+                                         Clearable="true" Class="datepicker-schmal" />
+                        <ValidationMessage For="() => _exportgruppe!.PublikationBis" />
+                    </div>
+                </div>
+
+                @* Mehrfachauswahl-Filter: max. 4 pro Zeile, kein horizontales Scrollen *@
+                <div class="mb-3 filter-raster filter-raster-breit">
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("EXPORTGRUPPE_FILTER_AMT")</label>
+                        <ItreeMultiSelect TItem="Amt" TValue="Guid" Data="_aemter" TextField="Bezeichnung" ValueField="Id"
+                                          @bind-Value="_exportgruppe!.AmtIds" DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" />
+                    </div>
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("EXPORTGRUPPE_FILTER_RESSORT")</label>
+                        <ItreeMultiSelect TItem="Ressort" TValue="Guid" Data="_ressorts" TextField="Bezeichnung" ValueField="Id"
+                                          @bind-Value="_exportgruppe!.RessortIds" DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" />
+                    </div>
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("EXPORTGRUPPE_FILTER_LEISTUNGSART")</label>
+                        <ItreeMultiSelect TItem="Leistungsart" TValue="Guid" Data="_leistungsarten" TextField="Bezeichnung" ValueField="Id"
+                                          @bind-Value="_exportgruppe!.LeistungsartIds" DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" />
+                    </div>
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("EXPORTGRUPPE_FILTER_PROJEKTART")</label>
+                        <ItreeMultiSelect TItem="Projektart" TValue="Guid" Data="_projektarten" TextField="Bezeichnung" ValueField="Id"
+                                          @bind-Value="_exportgruppe!.ProjektartIds" DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" />
+                    </div>
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("EXPORTGRUPPE_FILTER_VERFAHRENSART")</label>
+                        <ItreeMultiSelect TItem="Verfahrensart" TValue="Guid" Data="_verfahrensarten" TextField="Bezeichnung" ValueField="Id"
+                                          @bind-Value="_exportgruppe!.VerfahrensartIds" DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" />
+                    </div>
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("EXPORTGRUPPE_FILTER_ROLLEINAUSSCHREIBUNG")</label>
+                        <ItreeMultiSelect TItem="RolleInAusschreibung" TValue="Guid" Data="_rollen" TextField="Bezeichnung" ValueField="Id"
+                                          @bind-Value="_exportgruppe!.RolleInAusschreibungIds" DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" />
+                    </div>
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("EXPORTGRUPPE_FILTER_KANTON")</label>
+                        <ItreeMultiSelect TItem="Kanton" TValue="Guid" Data="_kantone" TextField="Bezeichnung" ValueField="Id"
+                                          @bind-Value="_exportgruppe!.KantonIds" DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" />
+                    </div>
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("EXPORTGRUPPE_FILTER_SACHBEARBEITERDOEA")</label>
+                        <ItreeMultiSelect TItem="Sachbearbeiter" TValue="Guid" Data="_sachbearbeiterDoeA" TextField="Fullname" ValueField="Id"
+                                          @bind-Value="_exportgruppe!.SachbearbeiterDoeAIds" DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" />
+                    </div>
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("EXPORTGRUPPE_FILTER_SACHBEARBEITERRD")</label>
+                        <ItreeMultiSelect TItem="Sachbearbeiter" TValue="Guid" Data="_sachbearbeiterRd" TextField="Fullname" ValueField="Id"
+                                          @bind-Value="_exportgruppe!.SachbearbeiterRdIds" DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" />
+                    </div>
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("EXPORTGRUPPE_FILTER_SACHBEARBEITERBBL")</label>
+                        <ItreeMultiSelect TItem="Sachbearbeiter" TValue="Guid" Data="_sachbearbeiterBbl" TextField="Fullname" ValueField="Id"
+                                          @bind-Value="_exportgruppe!.SachbearbeiterBblIds" DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" />
+                    </div>
+                </div>
+
+                <ItreeButtonGroup Position="EnumButtonGroupPosition.Rechts">
+                    <ItreeButton Type="EnumButton.Speichern"
+                                 ButtonType="ButtonType.Submit"
+                                 Enabled="@(HasChanges() && !_isSaving)"
+                                 SpinnerIsLoading="@_isSaving" />
+                </ItreeButtonGroup>
+            }
+        </div>
+    </EditForm>
+
+    @if (_ergebnisListe != null)
+    {
+        @* .grid-wrapper verhindert, dass das breite Grid den Flex-Container der Seite aufdehnt — es scrollt nur innerhalb
+           dieses Wrappers bzw. im Grid selbst, sobald Spaltenbreiten gezogen wurden (Resizable). .pager-oben (app.css)
+           schiebt den Pager optisch über die Tabelle. *@
+        <div class="mt-4 pager-oben grid-wrapper">
+            <ItreeGrid TItem="Ergebnis" Data="_ergebnisListe" Pageable="true" PageSize="PageSize" PageSizes="PageSizeOptions"
+                       Sortable="true" Resizable="true" FilterMode="ItreeGridFilterMode.FilterMenu" OnRowClick="OpenAusschreibung">
+                <GridToolBarTemplate>
+                    <div class="d-flex align-center gap-4">
+                        <MudText Typo="Typo.h6" Class="ml-4">@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNISSE") (@_ergebnisListe.Count)</MudText>
+                        <ItreeButton Icon="@Icons.Material.Filled.ViewColumn"
+                                     ButtonTextKey="EXPORTGRUPPE_SPALTENEINSTELLUNGEN"
+                                     ShowButtonText="true"
+                                     OnClick="@(() => _spaltenPopup?.Open())" />
+                        <ItreeButton Class="gap-3"
+                                     Icon="@Icons.Material.Filled.TableChart"
+                                     ButtonTextKey="EXPORTGRUPPE_EXCEL_EXPORT"
+                                     ShowButtonText="true"
+                                     OnClick="ExportExcel"
+                                     Enabled="@_ergebnisListe.Any()" />
+                        <MudCheckBox T="bool" @bind-Value="_alleDaten" Dense="true" Class="ml-4"
+                                     Label="@TranslationHelper.Translate("EXPORTGRUPPE_ALLE_DATEN")" />
+                    </div>
+                </GridToolBarTemplate>
+                <GridColumns>
+                    <ItreeGridColumn Visible="@_sichtbareSpalten.Contains(nameof(Ergebnis.Jahr))" Field="Jahr" Title="@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNIS_JAHR")" />
+                    <ItreeGridColumn Visible="@_sichtbareSpalten.Contains(nameof(Ergebnis.NummerStr))" Field="NummerStr" Title="@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNIS_NUMMERSTR")" />
+                    <ItreeGridColumn Visible="@_sichtbareSpalten.Contains(nameof(Ergebnis.Bezeichnung))" Field="Bezeichnung" Title="@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNIS_BEZEICHNUNG")" />
+                    <ItreeGridColumn Visible="@_sichtbareSpalten.Contains(nameof(Ergebnis.SimapNr))" Field="SimapNr" Title="@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNIS_SIMAPNR")" />
+                    <ItreeGridColumn Visible="@_sichtbareSpalten.Contains(nameof(Ergebnis.Amt))" Field="Amt" Title="@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNIS_AMT")" />
+                    <ItreeGridColumn Visible="@_sichtbareSpalten.Contains(nameof(Ergebnis.Ressort))" Field="Ressort" Title="@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNIS_RESSORT")" />
+                    <ItreeGridColumn Visible="@_sichtbareSpalten.Contains(nameof(Ergebnis.Leistungsart))" Field="Leistungsart" Title="@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNIS_LEISTUNGSART")" />
+                    <ItreeGridColumn Visible="@_sichtbareSpalten.Contains(nameof(Ergebnis.Projektart))" Field="Projektart" Title="@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNIS_PROJEKTART")" />
+                    <ItreeGridColumn Visible="@_sichtbareSpalten.Contains(nameof(Ergebnis.Verfahrensart))" Field="Verfahrensart" Title="@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNIS_VERFAHRENSART")" />
+                    <ItreeGridColumn Visible="@_sichtbareSpalten.Contains(nameof(Ergebnis.RolleInAusschreibung))" Field="RolleInAusschreibung" Title="@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNIS_ROLLEINAUSSCHREIBUNG")" />
+                    <ItreeGridColumn Visible="@_sichtbareSpalten.Contains(nameof(Ergebnis.Kanton))" Field="Kanton" Title="@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNIS_KANTON")" />
+                    <ItreeGridColumn Visible="@_sichtbareSpalten.Contains(nameof(Ergebnis.SachbearbeiterDoeA))" Field="SachbearbeiterDoeA" Title="@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNIS_SACHBEARBEITERDOEA")" />
+                    <ItreeGridColumn Visible="@_sichtbareSpalten.Contains(nameof(Ergebnis.SachbearbeiterRd))" Field="SachbearbeiterRd" Title="@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNIS_SACHBEARBEITERRD")" />
+                    <ItreeGridColumn Visible="@_sichtbareSpalten.Contains(nameof(Ergebnis.SachbearbeiterBbl))" Field="SachbearbeiterBbl" Title="@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNIS_SACHBEARBEITERBBL")" />
+                    <ItreeGridColumn Visible="@_sichtbareSpalten.Contains(nameof(Ergebnis.Publikation))" Field="Publikation" Title="@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNIS_PUBLIKATION")" />
+                    <ItreeGridColumn Visible="@_sichtbareSpalten.Contains(nameof(Ergebnis.OffertenFrist))" Field="OffertenFrist" Title="@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNIS_OFFERTENFRIST")" />
+                    <ItreeGridColumn Visible="@_sichtbareSpalten.Contains(nameof(Ergebnis.Abgeschlossen))" Field="Abgeschlossen" Title="@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNIS_ABGESCHLOSSEN")">
+                        <Template>
+                            <JaNeinIcon Wert="context.Abgeschlossen" />
+                        </Template>
+                    </ItreeGridColumn>
+                    <ItreeGridColumn Visible="@_sichtbareSpalten.Contains(nameof(Ergebnis.Extern))" Field="Extern" Title="@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNIS_EXTERN")" />
+                    <ItreeGridColumn Visible="@_sichtbareSpalten.Contains(nameof(Ergebnis.Personalverleih))" Field="Personalverleih" Title="@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNIS_PERSONALVERLEIH")">
+                        <Template>
+                            <JaNeinIcon Wert="context.Personalverleih" />
+                        </Template>
+                    </ItreeGridColumn>
+                    <ItreeGridColumn Visible="@_sichtbareSpalten.Contains(nameof(Ergebnis.BeschaffungDezentral))" Field="BeschaffungDezentral" Title="@TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNIS_BESCHAFFUNGDEZENTRAL")">
+                        <Template>
+                            <JaNeinIcon Wert="context.BeschaffungDezentral" />
+                        </Template>
+                    </ItreeGridColumn>
+                </GridColumns>
+            </ItreeGrid>
+        </div>
+
+        <SpaltenPopup @ref="_spaltenPopup" TitelKey="EXPORTGRUPPE_SPALTENEINSTELLUNGEN" AlleSpalten="ExportgruppeSpalten.AlleSpalten"
+                      SichtbareSpalten="_sichtbareSpalten" OnChange="SpaltenGeaendert" OnClose="SpaltenPopupGeschlossen" />
+    }
+}
+
+@code {
+    /// <summary>Id der Exportgruppe aus der Route; <c>Guid.Empty</c> startet eine Neuanlage.</summary>
+    [Parameter]
+    public Guid ExpId { get; set; }
+
+    private const int PageSize = 25;
+
+    private static readonly List<int?> PageSizeOptions = [10, 25, 50, 100];
+
+    // Die Id-Listen werden von IsEqual ausgeschlossen und separat als Mengen verglichen.
+    private const string IdListenProperties = "AmtIds,KantonIds,LeistungsartIds,ProjektartIds,RessortIds,RolleInAusschreibungIds,SachbearbeiterDoeAIds,SachbearbeiterRdIds,SachbearbeiterBblIds,VerfahrensartIds";
+
+    private readonly ExportgruppeValidator _validator = new(withoutBaseValidator: true);
+
+    private bool _alleDaten;
+    private bool _filterAufgeklappt;
+    private bool _isDeleting;
+    private bool _isLoading = true;
+    private bool _isSaving;
+    private bool _nameBearbeiten;
+
+    private Guid _initializedFor;
+
+    private HashSet<string> _sichtbareSpalten = new();
+
+    private Exportgruppe? _exportgruppe;
+    private Exportgruppe? _original;
+
+    private List<Amt> _aemter = new();
+    private List<Kanton> _kantone = new();
+    private List<Leistungsart> _leistungsarten = new();
+    private List<Projektart> _projektarten = new();
+    private List<Ressort> _ressorts = new();
+    private List<RolleInAusschreibung> _rollen = new();
+    private List<Sachbearbeiter> _sachbearbeiterBbl = new();
+    private List<Sachbearbeiter> _sachbearbeiterDoeA = new();
+    private List<Sachbearbeiter> _sachbearbeiterRd = new();
+    private List<Verfahrensart> _verfahrensarten = new();
+    private List<int> _abschlussJahre = new();
+    private List<int> _jahre = new();
+    private List<Ergebnis>? _ergebnisListe;
+
+    private SpaltenPopup? _spaltenPopup;
+
+    private static bool ListChanged(List<Guid> aktuell, List<Guid> original) => !aktuell.ToHashSet().SetEquals(original);
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Auswahllisten alphabetisch nach angezeigtem Text (die Verfahrensarten liefert GetAll nach Sortierungs-Nr.).
+        _aemter = (await AmtService.GetAll()).Alphabetisch(a => a.Bezeichnung);
+        _kantone = (await KantonService.GetAll()).Alphabetisch(k => k.Bezeichnung);
+        _leistungsarten = (await LeistungsartService.GetAll()).Alphabetisch(l => l.Bezeichnung);
+        _projektarten = (await ProjektartService.GetAll()).Alphabetisch(p => p.Bezeichnung);
+        _ressorts = (await RessortService.GetAll()).Alphabetisch(r => r.Bezeichnung);
+        _rollen = (await RolleInAusschreibungService.GetAll()).Alphabetisch(r => r.Bezeichnung);
+        // Je Rolle die aktiven Personen der passenden Organisation und alle je in der Rolle zugewiesenen, auch inaktive:
+        // Nach Projekten ehemaliger Sachbearbeiter muss sich weiterhin filtern lassen.
+        _sachbearbeiterBbl = (await SachbearbeiterService.GetFilterAuswahl(EnumOrganisationszugehoerigkeit.BBL)).Alphabetisch(s => s.Fullname);
+        _sachbearbeiterDoeA = (await SachbearbeiterService.GetFilterAuswahl(EnumOrganisationszugehoerigkeit.DoeA)).Alphabetisch(s => s.Fullname);
+        _sachbearbeiterRd = (await SachbearbeiterService.GetFilterAuswahl(EnumOrganisationszugehoerigkeit.RD)).Alphabetisch(s => s.Fullname);
+        _verfahrensarten = (await VerfahrensartService.GetAll()).Alphabetisch(v => v.Bezeichnung);
+        _jahre = await AusschreibungService.GetAlleJahre();
+        _abschlussJahre = await AusschreibungService.GetAlleAbschlussJahre();
+
+        await LadeExportgruppe();
+        _isLoading = false;
+    }
+
+    // Navigation auf eine ANDERE Exportgruppe mit derselben Komponente (z.B. nach Duplizieren):
+    // OnInitializedAsync läuft nicht erneut, daher hier neu laden.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_isLoading || ExpId == _initializedFor)
+        {
+            return;
+        }
+
+        await LadeExportgruppe();
+    }
+
+    private async Task LadeExportgruppe()
+    {
+        if (ExpId == Guid.Empty)
+        {
+            _exportgruppe = new Exportgruppe { Name = TranslationHelper.Translate("EXPORTGRUPPE_NEU") };
+            _ergebnisListe = null;
+        }
+        else
+        {
+            _exportgruppe = await ExportgruppeService.GetAsync(ExpId);
+            if (_exportgruppe == null || _exportgruppe.Id == Guid.Empty)
+            {
+                // Nicht gefunden -> zurück zur Übersicht
+                NavigationService.NavigateTo("exportgruppen");
+                return;
+            }
+
+            await LadeInaktiveZugewiesene();
+            _ergebnisListe = await ExportgruppeService.GetErgebnisAsync(_exportgruppe);
+        }
+
+        _sichtbareSpalten = ExportgruppeSpalten.AusCsv(_exportgruppe.Spalten);
+        // Bestehende Gruppen: Filter eingeklappt (das Ergebnis steht im Vordergrund);
+        // Neuanlage: aufgeklappt, da zuerst die Filter definiert werden.
+        _filterAufgeklappt = ExpId == Guid.Empty;
+        _original = _exportgruppe.Clone();
+        _initializedFor = ExpId;
+    }
+
+    // GetAll liefert nur aktive Stammdaten; fehlt ein zugewiesener Eintrag, zeigt die Mehrfachauswahl seine GUID
+    // und bietet ihn nicht zum Abwählen an. Nachgeladene Einträge stehen an ihrer alphabetischen Stelle.
+    private async Task LadeInaktiveZugewiesene()
+    {
+        _aemter = await ErgaenzeFehlende(_aemter, _exportgruppe!.AmtIds, AmtService, a => a.Bezeichnung);
+        _kantone = await ErgaenzeFehlende(_kantone, _exportgruppe.KantonIds, KantonService, k => k.Bezeichnung);
+        _leistungsarten = await ErgaenzeFehlende(_leistungsarten, _exportgruppe.LeistungsartIds, LeistungsartService, l => l.Bezeichnung);
+        _projektarten = await ErgaenzeFehlende(_projektarten, _exportgruppe.ProjektartIds, ProjektartService, p => p.Bezeichnung);
+        _ressorts = await ErgaenzeFehlende(_ressorts, _exportgruppe.RessortIds, RessortService, r => r.Bezeichnung);
+        _rollen = await ErgaenzeFehlende(_rollen, _exportgruppe.RolleInAusschreibungIds, RolleInAusschreibungService, r => r.Bezeichnung);
+        _sachbearbeiterBbl = await ErgaenzeFehlende(_sachbearbeiterBbl, _exportgruppe.SachbearbeiterBblIds, SachbearbeiterService, s => s.Fullname);
+        _sachbearbeiterDoeA = await ErgaenzeFehlende(_sachbearbeiterDoeA, _exportgruppe.SachbearbeiterDoeAIds, SachbearbeiterService, s => s.Fullname);
+        _sachbearbeiterRd = await ErgaenzeFehlende(_sachbearbeiterRd, _exportgruppe.SachbearbeiterRdIds, SachbearbeiterService, s => s.Fullname);
+        _verfahrensarten = await ErgaenzeFehlende(_verfahrensarten, _exportgruppe.VerfahrensartIds, VerfahrensartService, v => v.Bezeichnung);
+    }
+
+    private static async Task<List<T>> ErgaenzeFehlende<T>(List<T> liste, List<Guid> ids, IBaseService<T> service, Func<T, string> text) where T : Basis
+    {
+        foreach (var id in ids.Where(id => liste.All(e => e.Id != id)).ToList())
+        {
+            liste.Add(await service.GetById(id));
+        }
+
+        return liste.Alphabetisch(text);
+    }
+
+    // Titelansicht nur verlassen, wenn ein gültiger Name steht — sonst bliebe ein leerer,
+    // nicht mehr anklickbarer Titel zurück. Beim Verlassen wird der geänderte Name gespeichert.
+    private async Task NameBearbeitenBeenden()
+    {
+        if (string.IsNullOrWhiteSpace(_exportgruppe?.Name))
+        {
+            return;
+        }
+
+        _nameBearbeiten = false;
+        await SpeichereGeaendertenNamen();
+    }
+
+    private async Task NameKeyUp(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            await NameBearbeitenBeenden();
+        }
+    }
+
+    // Auto-Save beim Verlassen des Namensfelds: speichert gezielt nur den Namen, übrige
+    // ungespeicherte Formularänderungen bleiben offen (Speichern-Button). Läuft bereits ein
+    // Speichern (Enter löst zusätzlich das Formular-Submit aus), übernimmt jenes den Namen.
+    // Bei einer Neuanlage gibt es noch nichts zu speichern — der Name geht mit dem ersten Speichern mit.
+    private async Task SpeichereGeaendertenNamen()
+    {
+        if (_isSaving || _exportgruppe!.Id == Guid.Empty || _exportgruppe.Name == _original!.Name)
+        {
+            return;
+        }
+
+        _isSaving = true;
+
+        // Bei Fehlschlag die vom Service gestempelten Audit-Felder zurücksetzen, sonst
+        // scheitert das nächste reguläre Speichern an der Konkurrenzprüfung.
+        var changedDateVorher = _exportgruppe.ChangedDate;
+        var changedUserVorher = _exportgruppe.ChangedUser;
+
+        var result = await ExportgruppeService.SaveNameAsync(_exportgruppe);
+        if (result.Id != Guid.Empty)
+        {
+            _original.Name = _exportgruppe.Name;
+            _original.ChangedDate = _exportgruppe.ChangedDate;
+            _original.ChangedUser = _exportgruppe.ChangedUser;
+        }
+        else
+        {
+            _exportgruppe.ChangedDate = changedDateVorher;
+            _exportgruppe.ChangedUser = changedUserVorher;
+        }
+
+        _isSaving = false;
+    }
+
+    // Popup-Änderungen ins Modell zurückschreiben — persistiert wird beim Schliessen des Popups.
+    private void SpaltenGeaendert()
+    {
+        _exportgruppe!.Spalten = ExportgruppeSpalten.AlsCsv(_sichtbareSpalten);
+    }
+
+    // Auto-Save beim Schliessen des Spalten-Popups: speichert gezielt nur die Spalten,
+    // übrige ungespeicherte Formularänderungen bleiben offen (Speichern-Button).
+    // Bei einer Neuanlage gibt es noch nichts zu speichern — die Spalten gehen mit dem ersten Speichern mit.
+    private async Task SpaltenPopupGeschlossen()
+    {
+        if (_exportgruppe!.Id == Guid.Empty || _original!.Spalten == _exportgruppe.Spalten)
+        {
+            return;
+        }
+
+        // Bei Fehlschlag die vom Service gestempelten Audit-Felder zurücksetzen, sonst
+        // scheitert das nächste reguläre Speichern an der Konkurrenzprüfung.
+        var changedDateVorher = _exportgruppe.ChangedDate;
+        var changedUserVorher = _exportgruppe.ChangedUser;
+
+        var result = await ExportgruppeService.SaveSpaltenAsync(_exportgruppe);
+        if (result.Id != Guid.Empty)
+        {
+            _original.Spalten = _exportgruppe.Spalten;
+            _original.ChangedDate = _exportgruppe.ChangedDate;
+            _original.ChangedUser = _exportgruppe.ChangedUser;
+        }
+        else
+        {
+            _exportgruppe.ChangedDate = changedDateVorher;
+            _exportgruppe.ChangedUser = changedUserVorher;
+        }
+    }
+
+    private async Task Save()
+    {
+        // Reentrancy-Schutz: der Blur beim Klick auf den Speichern-Button kann bereits den
+        // Namens-Auto-Save gestartet haben — dann nicht parallel nochmals speichern.
+        if (_isSaving)
+        {
+            return;
+        }
+
+        _isSaving = true;
+
+        var istNeu = _exportgruppe!.Id == Guid.Empty;
+        var result = await ExportgruppeService.SaveAsync(_exportgruppe);
+
+        // Bei Fehlern liefert der ErrorHandler eine leere Instanz -> Formularzustand behalten.
+        if (result.Id == Guid.Empty)
+        {
+            // Fehlgeschlagene Neuanlage: Validate hat die Id am Modell bereits gestempelt —
+            // zurücksetzen, damit der nächste Versuch wieder den Neuanlage-Pfad nimmt.
+            if (istNeu)
+            {
+                _exportgruppe.Id = Guid.Empty;
+            }
+        }
+        else
+        {
+            _exportgruppe = result;
+            _original = _exportgruppe.Clone();
+            _initializedFor = _exportgruppe.Id;
+
+            if (istNeu)
+            {
+                // URL ohne Reload auf die neue Id umschreiben
+                NavigationService.NavigateTo($"exportgruppe/{_exportgruppe.Id}", false, true);
+            }
+
+            _ergebnisListe = await ExportgruppeService.GetErgebnisAsync(_exportgruppe);
+        }
+
+        _isSaving = false;
+    }
+
+    private async Task Duplizieren()
+    {
+        _isSaving = true;
+
+        var kopie = _exportgruppe!.Clone()!;
+        kopie.Id = Guid.Empty;
+        kopie.Name = $"{kopie.Name} {TranslationHelper.Translate("EXPORTGRUPPE_TEXT_DUPLIKAT")}";
+
+        var gespeichert = await ExportgruppeService.SaveAsync(kopie);
+        _isSaving = false;
+
+        if (gespeichert.Id != Guid.Empty)
+        {
+            NavigationService.NavigateTo($"exportgruppe/{gespeichert.Id}");
+        }
+    }
+
+    private void DeleteExportgruppe()
+    {
+        if (_exportgruppe is null || _exportgruppe.Id == Guid.Empty)
+        {
+            return;
+        }
+
+        var id = _exportgruppe.Id;
+
+        ConfirmService.ShowDeleteConfirm(async confirmed =>
+        {
+            if (confirmed)
+            {
+                _isDeleting = true;
+                await InvokeAsync(StateHasChanged);
+
+                var deleted = await ExportgruppeService.DeleteAsync(id);
+                _isDeleting = false;
+
+                if (deleted.Id == id)
+                {
+                    NavigationService.NavigateTo("exportgruppen");
+                    return;
+                }
+            }
+            await InvokeAsync(StateHasChanged);
+        });
+        StateHasChanged();
+    }
+
+    private bool HasChanges()
+    {
+        if (_exportgruppe == null || _original == null)
+        {
+            return false;
+        }
+
+        if (!_exportgruppe.IsEqual(_original, IdListenProperties))
+        {
+            return true;
+        }
+
+        return ListChanged(_exportgruppe.AmtIds, _original.AmtIds) ||
+               ListChanged(_exportgruppe.KantonIds, _original.KantonIds) ||
+               ListChanged(_exportgruppe.LeistungsartIds, _original.LeistungsartIds) ||
+               ListChanged(_exportgruppe.ProjektartIds, _original.ProjektartIds) ||
+               ListChanged(_exportgruppe.RessortIds, _original.RessortIds) ||
+               ListChanged(_exportgruppe.RolleInAusschreibungIds, _original.RolleInAusschreibungIds) ||
+               ListChanged(_exportgruppe.SachbearbeiterDoeAIds, _original.SachbearbeiterDoeAIds) ||
+               ListChanged(_exportgruppe.SachbearbeiterRdIds, _original.SachbearbeiterRdIds) ||
+               ListChanged(_exportgruppe.SachbearbeiterBblIds, _original.SachbearbeiterBblIds) ||
+               ListChanged(_exportgruppe.VerfahrensartIds, _original.VerfahrensartIds);
+    }
+
+    // «Zurück zur Suche» in der Ausschreibung führt dann auf diese Exportgruppe zurück.
+    private void OpenAusschreibung(ItreeGridRowClickEventArgs args)
+    {
+        HerkunftState.RuecksprungUrl = $"exportgruppe/{_exportgruppe!.Id}";
+        NavigationService.NavigateTo($"ausschreibung/{((Ergebnis)args.Item).Id}");
+    }
+
+    private async Task ExportExcel()
+    {
+        if (_ergebnisListe == null || !_ergebnisListe.Any())
+        {
+            return;
+        }
+
+        var filename = $"{_exportgruppe!.Name}_{DateTime.Now:yyyy_MM_dd}.xlsx";
+        string id;
+
+        if (_alleDaten)
+        {
+            // Erweiterter Export: mit denselben Selektionskriterien neu lesen — eine Zeile pro
+            // Offertzustand mit allen Attributen von Ausschreibung, Los, Offerte, Zustand und Anbieter.
+            var alleDaten = await ExportgruppeService.GetErgebnisAlleDatenAsync(_exportgruppe);
+            if (alleDaten == null || !alleDaten.Any())
+            {
+                return;
+            }
+
+            id = await ExportToExcelService.ExportToExcel(filename, alleDaten, "EXPORTGRUPPE", ErgebnisAlleDaten.ExportSpalten(),
+                zusatzSpalten: BerichtigungSpalten(alleDaten));
+        }
+        else
+        {
+            var propertyList = ExportgruppeSpalten.AlleSpalten
+                .Where(s => _sichtbareSpalten.Contains(s.Property))
+                .Select(s => s.Property)
+                .ToList();
+            id = await ExportToExcelService.ExportToExcel(filename, _ergebnisListe, "EXPORTGRUPPE", propertyList);
+        }
+
+        await DownloadFileFromStream(JsRuntime, new Guid(id));
+    }
+
+    /// <summary>
+    /// Dynamische Spalten für die Berichtigungen im erweiterten Export: pro Berichtigung
+    /// (maximale Anzahl über alle Zeilen) je Eingereicht, Publiziert, Verzögerung, Anzahl Tage
+    /// und Bemerkungen — nummeriert als «Berichtigung 1, 2, …» und zuhinterst angehängt.
+    /// </summary>
+    private static List<DynamischeExportSpalte<ErgebnisAlleDaten>> BerichtigungSpalten(List<ErgebnisAlleDaten> alleDaten)
+    {
+        var spalten = new List<DynamischeExportSpalte<ErgebnisAlleDaten>>();
+        var maxBerichtigungen = alleDaten.Max(a => a.Berichtigungen.Count);
+        for (var i = 0; i < maxBerichtigungen; i++)
+        {
+            var index = i;
+            var nummer = index + 1;
+            spalten.Add(new DynamischeExportSpalte<ErgebnisAlleDaten>
+            {
+                Titel = string.Format(TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNISALLEDATEN_BERICHTIGUNGNEINGEREICHT"), nummer),
+                Wert = a => a.Berichtigungen.ElementAtOrDefault(index)?.Eingereicht?.ToString("dd.MM.yyyy")
+            });
+            spalten.Add(new DynamischeExportSpalte<ErgebnisAlleDaten>
+            {
+                Titel = string.Format(TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNISALLEDATEN_BERICHTIGUNGNPUBLIZIERT"), nummer),
+                Wert = a => a.Berichtigungen.ElementAtOrDefault(index)?.Publiziert?.ToString("dd.MM.yyyy")
+            });
+            spalten.Add(new DynamischeExportSpalte<ErgebnisAlleDaten>
+            {
+                Titel = string.Format(TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNISALLEDATEN_BERICHTIGUNGNVERZOEGERUNG"), nummer),
+                Wert = a => a.Berichtigungen.ElementAtOrDefault(index) is { } ber
+                    ? TranslationHelper.Translate(ber.VerzoegerungDurchAuftraggeber ? "EXPORT_JA" : "EXPORT_NEIN")
+                    : null
+            });
+            spalten.Add(new DynamischeExportSpalte<ErgebnisAlleDaten>
+            {
+                Titel = string.Format(TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNISALLEDATEN_BERICHTIGUNGNANZAHLTAGE"), nummer),
+                Wert = a => a.Berichtigungen.ElementAtOrDefault(index)?.AnzahlTage
+            });
+            spalten.Add(new DynamischeExportSpalte<ErgebnisAlleDaten>
+            {
+                Titel = string.Format(TranslationHelper.Translate("EXPORTGRUPPE_ERGEBNISALLEDATEN_BERICHTIGUNGNBEMERKUNGEN"), nummer),
+                Wert = a => a.Berichtigungen.ElementAtOrDefault(index)?.Bemerkungen
+            });
+        }
+        return spalten;
+    }
+}

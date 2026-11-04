@@ -1,0 +1,42 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@* Von-/Bis-Datumsfilter der Auswertungs-Kacheln samt Hinweis, wenn Bis vor Von liegt.
+   Die Gültigkeit prüft die Kachel selbst (siehe IstGueltig), da sie zusätzlich eigene
+   Bedingungen für den Erstellen-Button hat. *@
+<div class="d-flex d-flex-column gap-3 mb-2">
+    <div class="tile-label">
+        <label class="form-label">@TranslationHelper.Translate(LabelKey)</label>
+    </div>
+    <div class="d-flex align-items-center justify-content-center gap-2">
+        <ItreeDatePicker TValue="DateTime?" Value="@Von" ValueChanged="@VonChanged" Clearable="true" Class="datepicker-schmal" />
+        <span class="fw-bold">-</span>
+        <ItreeDatePicker TValue="DateTime?" Value="@Bis" ValueChanged="@BisChanged" Clearable="true" Class="datepicker-schmal" />
+    </div>
+</div>
+@if (Von != null && Bis != null && Bis < Von)
+{
+    <MudText Typo="Typo.caption" Color="Color.Error" Class="d-block mb-2">
+        @TranslationHelper.Translate("AUSWERTUNG_DATUM_VON_BIS_FEHLER")
+    </MudText>
+}
+
+@code {
+    /// <summary>Übersetzungsschlüssel der Beschriftung vor den Feldern.</summary>
+    [Parameter, EditorRequired] public string LabelKey { get; set; } = string.Empty;
+
+    /// <summary>Beginn des Zeitraums (Two-Way-Binding via <c>VonChanged</c>).</summary>
+    [Parameter] public DateTime? Von { get; set; }
+
+    /// <summary>Meldet den geänderten Beginn an die Kachel.</summary>
+    [Parameter] public EventCallback<DateTime?> VonChanged { get; set; }
+
+    /// <summary>Ende des Zeitraums (Two-Way-Binding via <c>BisChanged</c>).</summary>
+    [Parameter] public DateTime? Bis { get; set; }
+
+    /// <summary>Meldet das geänderte Ende an die Kachel.</summary>
+    [Parameter] public EventCallback<DateTime?> BisChanged { get; set; }
+
+    /// <summary>Prüft, ob beide Felder gesetzt sind und der Zeitraum vorwärts läuft.</summary>
+    public static bool IstGueltig(DateTime? von, DateTime? bis) => von != null && bis != null && bis >= von;
+}

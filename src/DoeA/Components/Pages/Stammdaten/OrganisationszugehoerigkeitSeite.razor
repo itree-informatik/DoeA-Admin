@@ -1,0 +1,53 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Data.Models.DTO.Stammdaten
+@using DoeA.Validator.Stammdaten
+@using DoeA.Interfaces.Stammdaten
+
+@inherits EditComponent<Organisationszugehoerigkeit, IOrganisationszugehoerigkeitService>
+
+@if (DataList == null)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <ItreeGrid TItem="Organisationszugehoerigkeit" Data="DataList"
+               Sortable="true" FilterMode="ItreeGridFilterMode.FilterMenu" OnRowClick="@SelectItem">
+        <GridToolBarTemplate>
+            <ItreeSearchbox Id="searchbox" OnClick="@LoadData" Placeholder="@TranslationHelper.Translate("AUSWAEHLEN")" @bind-value="@SearchValue" @bind-onlyActive="NurAktive" />
+        </GridToolBarTemplate>
+        <GridColumns>
+            <ItreeGridColumn Field="Bezeichnung" Title="@TranslationHelper.Translate("STAMMDATEN_ORGANISATIONSZUGEHOERIGKEIT_BEZEICHNUNG")" />
+            <ItreeGridColumn Field="Kurzbezeichnung" Title="@TranslationHelper.Translate("STAMMDATEN_ORGANISATIONSZUGEHOERIGKEIT_KURZBEZEICHNUNG")" />
+            <ItreeGridColumn Field="Aktiv" Title="@TranslationHelper.Translate("STAMMDATEN_ORGANISATIONSZUGEHOERIGKEIT_AKTIV")">
+                <Template>
+                    <JaNeinIcon Wert="context.Aktiv" />
+                </Template>
+            </ItreeGridColumn>
+        </GridColumns>
+    </ItreeGrid>
+
+    <ItreeFormWindow WindowVisible="@(SelectedItem != null)"
+                     WindowWidth="800px"
+                     Model="@SelectedItem"
+                     OnSave="@Save"
+                     Validator="@Validator"
+                     AutoGenerate="true"
+                     PrefixTranslationKey="STAMMDATEN_ORGANISATIONSZUGEHOERIGKEIT"
+                     IgnorePropertyList="@IgnoreProperties"
+                     OnClose="@Cancel" />
+}
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        Validator = new OrganisationszugehoerigkeitValidator(true);
+
+        // Aktiv ist fachlich fix (die drei Einträge sind über EnumOrganisationszugehoerigkeit im Code
+        // verankert) und wird deshalb weder im Formular angeboten noch beim Vergleich berücksichtigt.
+        IgnoreProperties = nameof(Organisationszugehoerigkeit.Aktiv);
+    }
+}

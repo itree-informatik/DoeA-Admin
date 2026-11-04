@@ -1,0 +1,80 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Data.Models.DTO
+@using DoeA.Data.Models.DTO.Stammdaten
+@using DoeA.Interfaces.Stammdaten
+@using DoeA.Validator.Stammdaten
+@inherits EditComponent<Amt, DoeA.Interfaces.Stammdaten.IAmtService>
+
+@inject IDepartementService DepartementService
+
+@if (DataList == null || _departemente == null)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <ItreeGrid TItem="Amt" Data="DataList" Pageable="true" PageSize="@PageSize" PageSizes="@PageSizeOptions"
+               Sortable="true" FilterMode="ItreeGridFilterMode.FilterMenu" OnRowClick="@SelectItem">
+        <GridToolBarTemplate>
+            <ItreeSearchbox Id="searchbox" OnClick="@LoadData" Placeholder="@TranslationHelper.Translate("AUSWAEHLEN")" @bind-value="@SearchValue" @bind-onlyActive="NurAktive" />
+            <MudSpacer />
+            <ItreeButton Type="EnumButton.Neu" OnClick="@(() => SelectItem(new Amt()))" />
+        </GridToolBarTemplate>
+        <GridColumns>
+            <ItreeGridColumn Field="Bezeichnung" Title="@TranslationHelper.Translate("STAMMDATEN_AMT_BEZEICHNUNG")" />
+            <ItreeGridColumn Field="Kurzbezeichnung" Title="@TranslationHelper.Translate("STAMMDATEN_AMT_KURZBEZEICHNUNG")" />
+            <ItreeGridColumn Field="Dienststellennummer" Title="@TranslationHelper.Translate("STAMMDATEN_AMT_DIENSTSTELLENNUMMER")" />
+            <ItreeGridColumn Field="DepId" Sortable="false" Title="@TranslationHelper.Translate("STAMMDATEN_AMT_DEPARTEMENT")">
+                <Template>
+                    @(_departemente!.FirstOrDefault(d => d.Id == context.DepId)?.Kurzbezeichnung)
+                </Template>
+                <FilterMenuTemplate>
+                    <ItreeFilterCheckboxList Items="_filterDepartementEintraege" SelectedKeys="_filterDepartementAuswahl" IdPrefix="departement" />
+                </FilterMenuTemplate>
+                <FilterMenuButtonsTemplate Context="filter">
+                    <ItreeFilterButtons OnFilter="@(() => MultiFilterAsync(filter, nameof(Amt.DepId), _filterDepartementAuswahl, s => Guid.Parse(s)))"
+                                        OnClear="@(() => MultiClearFilterAsync(filter, _filterDepartementAuswahl))" />
+                </FilterMenuButtonsTemplate>
+            </ItreeGridColumn>
+            <ItreeGridColumn Field="Aktiv" Title="@TranslationHelper.Translate("STAMMDATEN_AMT_AKTIV")">
+                <Template>
+                    <JaNeinIcon Wert="context.Aktiv" />
+                </Template>
+            </ItreeGridColumn>
+        </GridColumns>
+    </ItreeGrid>
+
+    <ItreeFormWindow WindowVisible="@(SelectedItem != null)"
+                     WindowWidth="800px"
+                     Model="@SelectedItem"
+                     OnSave="@Save"
+                     Validator="@Validator"
+                     AutoGenerate="true"
+                     WithBaseProperties="true"
+                     IgnorePropertyList="@BasisfelderAusgeblendet"
+                     PrefixTranslationKey="STAMMDATEN_AMT"
+                     OnClose="@Cancel"
+                     DropdownList="@_dropdowns"
+                     OnDelete="Delete"
+                     DeleteButtonShow="true" />
+}
+
+@code {
+    private Dictionary<string, string> _filterDepartementEintraege = new();
+
+    private List<Departement>? _departemente;
+    private List<ItreeFormDropdown> _dropdowns = new();
+    private List<string> _filterDepartementAuswahl = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        Validator = new AmtValidator(true);
+        _departemente = await DepartementService.GetAll();
+        _filterDepartementEintraege = FilterEintraege(_departemente!, e => e.Bezeichnung);
+        var dropdownDepartement = CreateItreeFormDropdown(_departemente!.OrderBy(a => a.Bezeichnung).ToList(), "DepId", "STAMMDATEN_AMT_DEPARTEMENT");
+        _dropdowns.Add(dropdownDepartement);
+    }
+}

@@ -1,0 +1,78 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Components.Pages.Stammdaten
+@using DoeA.Data.Models.DTO
+@using DoeA.Data.Models.DTO.Stammdaten
+
+@* CPV-Zuordnungen der Ausschreibung: Chip-Liste mit Entfernen-Button plus Auswahlfenster
+   für neue Nummern (Chip-Styles cpv-*, s. app.css). *@
+<div class="cpv-container">
+    <div class="d-flex align-items-center gap-2 mb-2 cpv-label-button">
+        <label class="form-label mb-0">@TranslationHelper.Translate("AUSSCHREIBUNG_CPVNUMMERN")</label>
+    </div>
+
+    <div class="d-flex flex-wrap align-items-center gap-2">
+        @foreach (var cpv in Ausschreibung.CpvNummern)
+        {
+            <span class="cpv-badge d-flex align-items-center">
+                @cpv.CpvNummer.Bezeichnung | @cpv.CpvNummer.NummerStr
+                <button type="button" class="btn-close btn-close-small ms-2" aria-label="@TranslationHelper.Translate("BUTTON_LOESCHEN")" @onclick="@(() => Entfernen(cpv))"></button>
+            </span>
+        }
+
+        <span class="cpv-badge cpv-add-chip d-flex align-items-center" @onclick="() => _showAuswahlFenster = true">
+            <i class="bi bi-plus-circle me-1"></i> @TranslationHelper.Translate("AUSSCHREIBUNG_CPVNUMMER_HINZUFUEGEN")
+        </span>
+    </div>
+</div>
+
+@if (_showAuswahlFenster)
+{
+    <ItreeWindow @bind-Visible="_showAuswahlFenster" MaxWidth="MaxWidth.Large">
+        <WindowTitle>
+            <strong><ItreeTranslation Key="AUSSCHREIBUNG_CPVNUMMER_AUSWAEHLEN" /></strong>
+        </WindowTitle>
+        <WindowContent>
+            <CpvNummerSeite OnSelect="Auswaehlen" ExcludeIds="@Ausschreibung.CpvNummern.Select(c => c.CpvId)" />
+        </WindowContent>
+        <WindowFooter>
+            <ItreeButton Type="EnumButton.Schliessen" OnClick="@(() => _showAuswahlFenster = false)" />
+        </WindowFooter>
+    </ItreeWindow>
+}
+
+@code {
+    /// <summary>Bearbeitete Ausschreibung — die CPV-Zuordnungen werden direkt auf ihr gepflegt.</summary>
+    [Parameter, EditorRequired]
+    public Ausschreibung Ausschreibung { get; set; } = null!;
+
+    /// <summary>Meldet jede Änderung an die Seite, damit deren Dirty-Check neu rendert (Speichern-Button).</summary>
+    [Parameter]
+    public EventCallback OnGeaendert { get; set; }
+
+    private bool _showAuswahlFenster;
+
+    private async Task Auswaehlen(CpvNummer cpvNummer)
+    {
+        if (Ausschreibung.CpvNummern.Any(c => c.CpvId == cpvNummer.Id))
+        {
+            return;
+        }
+
+        Ausschreibung.CpvNummern.Add(new AusschreibungCpvNummer
+        {
+            AusId = Ausschreibung.Id,
+            CpvId = cpvNummer.Id,
+            CpvNummer = cpvNummer
+        });
+
+        await OnGeaendert.InvokeAsync();
+    }
+
+    private async Task Entfernen(AusschreibungCpvNummer cpv)
+    {
+        Ausschreibung.CpvNummern.Remove(cpv);
+        await OnGeaendert.InvokeAsync();
+    }
+}

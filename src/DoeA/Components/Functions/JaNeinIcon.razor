@@ -1,0 +1,18 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@* Ja/Nein-Darstellung für Bool-Spalten der Listen (grünes Häkchen / rotes Kreuz). *@
+@if (Wert)
+{
+    <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Success" />
+}
+else
+{
+    <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="Color.Error" />
+}
+
+@code {
+    /// <summary>Anzuzeigender Wert (true = Häkchen, false = Kreuz).</summary>
+    [Parameter]
+    public bool Wert { get; set; }
+}

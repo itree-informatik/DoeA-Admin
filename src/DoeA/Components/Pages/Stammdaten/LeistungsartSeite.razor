@@ -1,0 +1,80 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Data.Models.DTO
+@using DoeA.Data.Models.DTO.Stammdaten
+@using DoeA.Validator.Stammdaten
+@using DoeA.Interfaces.Stammdaten
+
+@inherits EditComponent<Leistungsart, ILeistungsartService>
+
+@inject IProjektartService ProjektartService
+
+@if (DataList == null || _projektarten == null)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <ItreeGrid TItem="Leistungsart" Data="DataList" Pageable="true" PageSize="@PageSize" PageSizes="@PageSizeOptions"
+               Sortable="true" FilterMode="ItreeGridFilterMode.FilterMenu" OnRowClick="@SelectItem">
+        <GridToolBarTemplate>
+            <ItreeSearchbox Id="searchbox" OnClick="@LoadData" Placeholder="@TranslationHelper.Translate("AUSWAEHLEN")" @bind-value="@SearchValue" @bind-onlyActive="NurAktive" />
+            <MudSpacer />
+            <ItreeButton Type="EnumButton.Neu" OnClick="@(() => SelectItem(new Leistungsart()))" />
+        </GridToolBarTemplate>
+        <GridColumns>
+            <ItreeGridColumn Field="Bezeichnung" Title="@TranslationHelper.Translate("STAMMDATEN_LEISTUNGSART_BEZEICHNUNG")" />
+            <ItreeGridColumn Field="Kurzbezeichnung" Title="@TranslationHelper.Translate("STAMMDATEN_LEISTUNGSART_KURZBEZEICHNUNG")" />
+            <ItreeGridColumn Field="PraId" Sortable="false" Title="@TranslationHelper.Translate("STAMMDATEN_LEISTUNGSART_PROJEKTART")">
+                <Template>
+                    @(_projektarten!.FirstOrDefault(p => p.Id == context.PraId)?.Bezeichnung)
+                </Template>
+                <FilterMenuTemplate>
+                    <ItreeFilterCheckboxList Items="_filterProjektartEintraege" SelectedKeys="_filterProjektartAuswahl" IdPrefix="projektart" />
+                </FilterMenuTemplate>
+                <FilterMenuButtonsTemplate Context="filter">
+                    <ItreeFilterButtons OnFilter="@(() => MultiFilterAsync(filter, nameof(Leistungsart.PraId), _filterProjektartAuswahl, s => Guid.Parse(s)))"
+                                        OnClear="@(() => MultiClearFilterAsync(filter, _filterProjektartAuswahl))" />
+                </FilterMenuButtonsTemplate>
+            </ItreeGridColumn>
+            <ItreeGridColumn Field="Aktiv" Title="@TranslationHelper.Translate("STAMMDATEN_LEISTUNGSART_AKTIV")">
+                <Template>
+                    <JaNeinIcon Wert="context.Aktiv" />
+                </Template>
+            </ItreeGridColumn>
+        </GridColumns>
+    </ItreeGrid>
+
+    <ItreeFormWindow WindowVisible="@(SelectedItem != null)"
+                     WindowWidth="800px"
+                     Model="@SelectedItem"
+                     OnSave="@Save"
+                     Validator="@Validator"
+                     AutoGenerate="true"
+                     WithBaseProperties="true"
+                     IgnorePropertyList="@BasisfelderAusgeblendet"
+                     PrefixTranslationKey="STAMMDATEN_LEISTUNGSART"
+                     OnClose="@Cancel"
+                     DropdownList="@_dropdowns"
+                     OnDelete="Delete"
+                     DeleteButtonShow="true" />
+}
+
+@code {
+    private Dictionary<string, string> _filterProjektartEintraege = new();
+
+    private List<ItreeFormDropdown> _dropdowns = new();
+    private List<Projektart>? _projektarten;
+    private List<string> _filterProjektartAuswahl = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        Validator = new LeistungsartValidator(true);
+        _projektarten = await ProjektartService.GetAll();
+        _filterProjektartEintraege = FilterEintraege(_projektarten!, e => e.Bezeichnung);
+        var dropdownProjektart = CreateItreeFormDropdown(_projektarten!.OrderBy(p => p.Bezeichnung).ToList(), "PraId", "STAMMDATEN_LEISTUNGSART_PROJEKTART");
+        _dropdowns.Add(dropdownProjektart);
+    }
+}

@@ -1,0 +1,55 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Interfaces.Auswertungen
+@inject IAuswertungService AuswertungService
+@inject IJSRuntime JsRuntime
+@inherits BaseComponent
+
+<TileTitle TitleKey="AUSWERTUNG_TILE_ZIELERREICHUNG"/>
+
+<TileDatumBereich LabelKey="AUSWERTUNG_TILE_ZIELERREICHUNG_PUBLIKATIONSDATUM"
+                  @bind-Von="_datumVon" @bind-Bis="_datumBis" />
+
+<div class="d-flex d-flex-column gap-2">
+    <ItreeButton Icon="@MudBlazor.Icons.Material.Filled.PictureAsPdf"
+                 ButtonTextKey="AUSWERTUNG_TILE_ZIELERREICHUNG_PDF_ERSTELLEN"
+                 ShowButtonText="true"
+                 OnClick="CreatePdf"
+                 Enabled="@(IstGueltig && !_isCreating)"
+                 SpinnerIsLoading="@_isCreating"/>
+</div>
+
+@code {
+    /// <summary>Meldet der Seite, dass sich der Filter geändert hat.</summary>
+    [Parameter]
+    public EventCallback Refresh { get; set; }
+
+    private bool _isCreating;
+
+    private DateTime? _datumBis = new DateTime(DateTime.Now.Year, 12, 31);
+    private DateTime? _datumVon = new DateTime(DateTime.Now.Year, 1, 1);
+
+    private bool IstGueltig => TileDatumBereich.IstGueltig(_datumVon, _datumBis);
+
+    private async Task CreatePdf()
+    {
+        if (!IstGueltig)
+        {
+            return;
+        }
+
+        _isCreating = true;
+        StateHasChanged();
+
+        await ErrorHandler.HandleAsync(async () =>
+        {
+            var id = await AuswertungService.GetZielerreichungAsync(
+                DateOnly.FromDateTime(_datumVon!.Value),
+                DateOnly.FromDateTime(_datumBis!.Value));
+            await DownloadFileFromStream(JsRuntime, new Guid(id));
+        });
+
+        _isCreating = false;
+    }
+}

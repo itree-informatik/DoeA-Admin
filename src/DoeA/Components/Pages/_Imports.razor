@@ -1,0 +1,7 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@* Alle Seiten verlangen einen freigeschalteten Benutzer: als Endpoint-Metadaten (Challenge/403 vor dem Rendern)
+   und in AuthorizeRouteView bei Navigation im Circuit. Ausnahmen markieren sich mit [AllowAnonymous]. *@
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = AuthKonstanten.PolicyAutorisiert)]

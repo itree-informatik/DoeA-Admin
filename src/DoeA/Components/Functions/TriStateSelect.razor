@@ -1,0 +1,25 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@* Tri-State-Auswahl für bool?-Filter: null = egal (keine Einschränkung), true = Ja, false = Nein. *@
+<div class="d-flex flex-column">
+    <label class="form-label">@Label</label>
+    @* DefaultText steht für null = egal *@
+    <ItreeDropDownList TItem="Option" TValue="bool?" Data="Optionen" TextField="Text" ValueField="Wert" Value="@Value" ValueChanged="@ValueChanged"
+                       DefaultText="@TranslationHelper.Translate("EXPORTGRUPPE_EGAL")" />
+</div>
+
+@code {
+    /// <summary>Beschriftung über dem Auswahlfeld.</summary>
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+
+    /// <summary>Gewählter Wert; <c>null</c> steht für "egal".</summary>
+    [Parameter] public bool? Value { get; set; }
+
+    /// <summary>Meldet den geänderten Wert an den Aufrufer.</summary>
+    [Parameter] public EventCallback<bool?> ValueChanged { get; set; }
+
+    private sealed record Option(bool Wert, string Text);
+
+    private static Option[] Optionen => [new(true, TranslationHelper.Translate("EXPORT_JA")), new(false, TranslationHelper.Translate("EXPORT_NEIN"))];
+}

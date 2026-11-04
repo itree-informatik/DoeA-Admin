@@ -1,0 +1,76 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Data.Models.DTO
+
+@* Wiederverwendbares Fenster für die Spaltensichtbarkeit einer Ergebnisliste. Wird per @ref/Open()
+   vom Toolbar-Button der Seite geöffnet. Das Fenster mutiert nur das übergebene Set; Persistierung
+   (falls nötig) übernimmt die Elternseite über OnChange/OnClose. *@
+@if (_visible)
+{
+    <ItreeWindow Visible="true" OnClose="Schliessen" MaxWidth="MaxWidth.Medium">
+        <WindowTitle>
+            <strong><ItreeTranslation Key="@TitelKey" /></strong>
+        </WindowTitle>
+        <WindowContent>
+            <div class="spalten-auswahl">
+                @foreach (var spalte in AlleSpalten)
+                {
+                    <MudCheckBox T="bool" Dense="true"
+                                 Value="@SichtbareSpalten.Contains(spalte.Property)"
+                                 ValueChanged="@(v => SpalteAendern(spalte.Property, v))"
+                                 Label="@TranslationHelper.Translate(spalte.TranslationKey)" />
+                }
+            </div>
+        </WindowContent>
+        <WindowFooter>
+            <ItreeButton Type="EnumButton.Schliessen" OnClick="Schliessen" />
+        </WindowFooter>
+    </ItreeWindow>
+}
+
+@code {
+    /// <summary>Spaltenkatalog der Seite (Reihenfolge = Anzeige-Reihenfolge im Popup).</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<SpaltenDefinition> AlleSpalten { get; set; } = Array.Empty<SpaltenDefinition>();
+
+    /// <summary>Sichtbare Property-Namen — wird direkt mutiert (Referenz der Elternseite).</summary>
+    [Parameter, EditorRequired] public HashSet<string> SichtbareSpalten { get; set; } = new();
+
+    /// <summary>Übersetzungskey des Popup-Titels.</summary>
+    [Parameter, EditorRequired] public string TitelKey { get; set; } = string.Empty;
+
+    /// <summary>Wird nach jeder Änderung aufgerufen, damit die Elternseite das Grid neu rendert.</summary>
+    [Parameter] public EventCallback OnChange { get; set; }
+
+    /// <summary>Wird beim Schliessen des Fensters aufgerufen (z.B. Auto-Save durch die Elternseite).</summary>
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private bool _visible;
+
+    /// <summary>Öffnet das Popup (Aufruf via @ref aus dem Toolbar-Button der Seite).</summary>
+    public void Open()
+    {
+        _visible = true;
+        StateHasChanged();
+    }
+
+    private async Task Schliessen()
+    {
+        _visible = false;
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task SpalteAendern(string property, bool sichtbar)
+    {
+        if (sichtbar)
+        {
+            SichtbareSpalten.Add(property);
+        }
+        else
+        {
+            SichtbareSpalten.Remove(property);
+        }
+
+        await OnChange.InvokeAsync();
+    }
+}

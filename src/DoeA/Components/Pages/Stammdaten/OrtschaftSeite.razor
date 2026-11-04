@@ -1,0 +1,182 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Data.Models.DTO
+@using DoeA.Data.Models.DTO.Stammdaten
+@using DoeA.Validator.Stammdaten
+@using DoeA.Interfaces.Stammdaten
+
+@inherits EditComponent<Ortschaft, IOrtschaftService>
+
+@inject ILandService LandService
+@inject IKantonService KantonService
+
+@if (DataList == null || _laender == null)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <ItreeGrid TItem="Ortschaft" Data="DataList" Pageable="true" PageSize="@PageSize" PageSizes="@PageSizeOptions"
+               Sortable="true" FilterMode="ItreeGridFilterMode.FilterMenu" OnRowClick="@SelectItem">
+        <GridToolBarTemplate>
+            <ItreeSearchbox Id="searchbox" OnClick="@LoadData" Placeholder="@TranslationHelper.Translate("AUSWAEHLEN")" @bind-value="@SearchValue" @bind-onlyActive="NurAktive" />
+            <MudSpacer />
+            <ItreeButton Type="EnumButton.Neu" OnClick="@(() => SelectItem(new Ortschaft()))" />
+        </GridToolBarTemplate>
+        <GridColumns>
+            <ItreeGridColumn Field="Ort" Title="@TranslationHelper.Translate("STAMMDATEN_ORTSCHAFT_ORT")" />
+            <ItreeGridColumn Field="Plz" Title="@TranslationHelper.Translate("STAMMDATEN_ORTSCHAFT_PLZ")" />
+            <ItreeGridColumn Field="LanId" Sortable="false" Title="@TranslationHelper.Translate("STAMMDATEN_ORTSCHAFT_LAND")">
+                <Template>
+                    @(_laender!.FirstOrDefault(l => l.Id == context.LanId)?.Bezeichnung)
+                </Template>
+                <FilterMenuTemplate>
+                    <ItreeFilterCheckboxList Items="_filterLandEintraege" SelectedKeys="_filterLandAuswahl" IdPrefix="land" />
+                </FilterMenuTemplate>
+                <FilterMenuButtonsTemplate Context="filter">
+                    <ItreeFilterButtons OnFilter="@(() => MultiFilterAsync(filter, nameof(Ortschaft.LanId), _filterLandAuswahl, s => Guid.Parse(s)))"
+                                        OnClear="@(() => MultiClearFilterAsync(filter, _filterLandAuswahl))" />
+                </FilterMenuButtonsTemplate>
+            </ItreeGridColumn>
+            <ItreeGridColumn Field="KanId" Sortable="false" Title="@TranslationHelper.Translate("STAMMDATEN_ORTSCHAFT_KANTON")">
+                <Template>
+                    @if (context.KanId != null)
+                    {
+                        @(_kantone!.FirstOrDefault(k => k.Id == context.KanId)?.Bezeichnung)
+                    }
+                </Template>
+                <FilterMenuTemplate>
+                    <ItreeFilterCheckboxList Items="_filterKantonEintraege" SelectedKeys="_filterKantonAuswahl" IdPrefix="kanton" />
+                </FilterMenuTemplate>
+                <FilterMenuButtonsTemplate Context="filter">
+                    <ItreeFilterButtons OnFilter="@(() => MultiFilterAsync(filter, nameof(Ortschaft.KanId), _filterKantonAuswahl, s => Guid.Parse(s)))"
+                                        OnClear="@(() => MultiClearFilterAsync(filter, _filterKantonAuswahl))" />
+                </FilterMenuButtonsTemplate>
+            </ItreeGridColumn>
+            <ItreeGridColumn Field="Aktiv" Title="@TranslationHelper.Translate("STAMMDATEN_ORTSCHAFT_AKTIV")">
+                <Template>
+                    <JaNeinIcon Wert="context.Aktiv" />
+                </Template>
+            </ItreeGridColumn>
+            <ItreeGridColumn Sortable="false" Filterable="false">
+                <Template>
+                    @if (OnSelect.HasDelegate)
+                    {
+                        <div class="btn-group-grid">
+                            <ItreeButton Type="EnumButton.Hinzufuegen" OnClick="@(() => OnItemSelected(context))" ShowButtonText="false" />
+                        </div>
+                    }
+                </Template>
+            </ItreeGridColumn>
+        </GridColumns>
+    </ItreeGrid>
+
+    <ItreeFormWindow WindowVisible="@(SelectedItem != null)"
+                     WindowWidth="800px"
+                     Model="@SelectedItem"
+                     OnSave="@SaveAndMaybeSelect"
+                     Validator="@Validator"
+                     AutoGenerate="true"
+                     WithBaseProperties="true"
+                     IgnorePropertyList="@BasisfelderAusgeblendet"
+                     PrefixTranslationKey="STAMMDATEN_ORTSCHAFT"
+                     OnClose="@Cancel"
+                     DropdownList="@_dropdowns"
+                     OnDelete="Delete"
+                     DeleteButtonShow="true" />
+}
+
+@code {
+    private Dictionary<string, string> _filterKantonEintraege = new();
+    private Dictionary<string, string> _filterLandEintraege = new();
+
+    private List<ItreeFormDropdown> _dropdowns = new();
+    private List<Kanton>? _kantone;
+    private List<Land>? _laender;
+    private List<string> _filterKantonAuswahl = new();
+    private List<string> _filterLandAuswahl = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        Validator = new OrtschaftValidator(true);
+        _laender = await LandService.GetAll();
+        _filterLandEintraege = FilterEintraege(_laender!, e => e.Bezeichnung);
+        _kantone = await KantonService.GetAll();
+        _filterKantonEintraege = FilterEintraege(_kantone!, e => e.Bezeichnung);
+        var dropdownLand = CreateItreeFormDropdown(_laender!.OrderBy(l => l.Bezeichnung).ToList(), "LanId", "STAMMDATEN_ORTSCHAFT_LAND");
+        _dropdowns.Add(dropdownLand);
+        var dropdownKanton = CreateItreeFormDropdown(_kantone!.OrderBy(k => k.Bezeichnung).ToList(), "KanId", "STAMMDATEN_ORTSCHAFT_KANTON");
+        _dropdowns.Add(dropdownKanton);
+    }
+
+    /// <summary>Übernimmt einen bestehenden Eintrag aus dem Grid in den Aufrufer.</summary>
+    private async Task OnItemSelected(Ortschaft item)
+    {
+        if (!OnSelect.HasDelegate)
+        {
+            throw new InvalidOperationException("Missing 'OnSelect' Event");
+        }
+
+        await OnSelect.InvokeAsync(item);
+    }
+
+    /// <summary>
+    /// Speichert den Eintrag (analog zu <see cref="EditComponent{TModel,TService}.Save"/>) und übernimmt
+    /// einen neu erfassten Eintrag im Popout-Modus direkt in den Aufrufer.
+    /// </summary>
+    private async Task SaveAndMaybeSelect()
+    {
+        if (SelectedItem == null)
+        {
+            return;
+        }
+
+        // Fehler wie in EditComponent.Save im Fehlerfenster anzeigen statt den Circuit zu beenden;
+        // das Formular bleibt in diesem Fall offen.
+        var istNeu = SelectedItem.Id == Guid.Empty;
+        var erfolgreich = false;
+        var gespeichert = default(Ortschaft);
+        await ErrorHandler.HandleAsync(async () =>
+        {
+            gespeichert = istNeu
+                ? await Service!.Create(SelectedItem)
+                : await Service!.Update(SelectedItem);
+            erfolgreich = true;
+            return new ServiceResult<Ortschaft>();
+        });
+
+        if (!erfolgreich)
+        {
+            // Die Validierung stempelt vor dem Insert bereits eine Id auf das Modell — zurücksetzen,
+            // damit der nächste Speicherversuch wieder als Neuanlage läuft.
+            if (istNeu)
+            {
+                SelectedItem.Id = Guid.Empty;
+            }
+
+            return;
+        }
+
+        if (DataList != null)
+        {
+            var vorhanden = DataList.SingleOrDefault(d => d.Id == gespeichert!.Id);
+            if (vorhanden != null)
+            {
+                DataList.Remove(vorhanden);
+            }
+
+            DataList.Add(gespeichert!);
+        }
+
+        SelectedItem = null;
+
+        if (istNeu && OnSelect.HasDelegate)
+        {
+            await OnSelect.InvokeAsync(gespeichert);
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+}

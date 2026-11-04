@@ -1,0 +1,33 @@
+﻿@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+<!DOCTYPE html>
+<html lang="de-CH">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="stylesheet" href="bootstrap/bootstrap.min.css" />
+    <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
+    <link href="_content/ItreeMud/itreemud.css" rel="stylesheet" />
+    @* Nach den Bibliotheken, damit die Regeln der Applikation bei gleicher Spezifität gewinnen *@
+    <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="DoeA.styles.css" />
+    @* Icons und Schrift lokal statt über CDN (jsdelivr, Google Fonts): keine Drittanfragen aus einer Bundesanwendung.
+       Noto Sans ist die Web-Schrift des CD Bund. *@
+    <link rel="stylesheet" href="lib/bootstrap-icons/bootstrap-icons.css" />
+    <link rel="stylesheet" href="lib/noto-sans/noto-sans.css" />
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+
+    <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+    <script src="_content/ItreeMud/itreemud.js"></script>
+    <script src="js/doea.js"></script>
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+<body>
+    <Routes @rendermode="InteractiveServer" />
+    <script src="_framework/blazor.web.js"></script>
+</body>
+
+</html>

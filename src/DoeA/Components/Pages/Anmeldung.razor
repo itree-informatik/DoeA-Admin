@@ -1,0 +1,116 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@page "/anmeldung"
+@attribute [AllowAnonymous]
+@layout DoeA.Components.Layout.AnmeldungLayout
+@implements IDisposable
+
+@inject IAktuellerBenutzer AktuellerBenutzer
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IJSRuntime JsRuntime
+@inject INavigationService Navigation
+
+@* Einzige anonyme Seite: zeigt nicht freigeschalteten Benutzern den Status und dient nach dem Logout als
+   Bestätigungsseite mit «Erneut anmelden» (eIAM-Vorgabe). Nicht angemeldete Besucher anderer Seiten landen nie hier,
+   sie werden direkt zu eIAM geleitet. *@
+<PageTitle>@TranslationHelper.Translate("ANMELDUNG_TITEL")</PageTitle>
+
+<h1 class="h4 mb-4">@TranslationHelper.Translate("ANMELDUNG_TITEL")</h1>
+
+@if (AktuellerBenutzer.IstAuthentisiert)
+{
+    <p>@TranslationHelper.Translate("ANMELDUNG_ANGEMELDET_ALS") <strong>@AktuellerBenutzer.Anzeigename</strong></p>
+    <p>@TranslationHelper.Translate("ANMELDUNG_NICHT_FREIGESCHALTET")</p>
+    <ItreeButtonGroup Position="EnumButtonGroupPosition.Links">
+        <ItreeButton Type="EnumButton.Aktualisieren" ButtonTextKey="ANMELDUNG_ERNEUT_PRUEFEN" OnClick="ZurStartseite" />
+        <ItreeButton Type="EnumButton.Schliessen" Icon="@Icons.Material.Filled.Logout" ButtonTextKey="ANMELDUNG_ABMELDEN" OnClick="Abmelden" />
+    </ItreeButtonGroup>
+}
+else
+{
+    @if (!string.IsNullOrEmpty(Fehler))
+    {
+        @* Der OIDC-Handler leitet bei einem Fehler (z.B. abgelehntes Client Secret) hierher; Details stehen im Log. *@
+        <MudAlert Severity="Severity.Error" Class="mb-3">@TranslationHelper.Translate("ANMELDUNG_FEHLGESCHLAGEN")</MudAlert>
+    }
+    else if (!_abmeldegrundGeprueft)
+    {
+        @* Text erst nach dem Auslesen des sessionStorage in OnAfterRenderAsync, sonst blitzt beim Prerendern kurz der
+           generische Text auf und wechselt dann. *@
+    }
+    else if (_abmeldegrund == AuthKonstanten.AbmeldegrundInaktivitaet)
+    {
+        @* Automatische Abmeldung durch die Sitzungsüberwachung (sitzung.js); unbekannte Werte zeigen den generischen Text. *@
+        <p>@string.Format(TranslationHelper.Translate("ANMELDUNG_ABGEMELDET_INAKTIVITAET"), (int)AuthKonstanten.SitzungInaktivitaet.TotalMinutes)</p>
+    }
+    else
+    {
+        <p>@TranslationHelper.Translate("ANMELDUNG_ABGEMELDET")</p>
+    }
+    <ItreeButton Type="EnumButton.Weiter" Icon="@Icons.Material.Filled.Login" ButtonTextKey="ANMELDUNG_ANMELDEN" OnClick="ZurStartseite" />
+}
+
+@code {
+    /// <summary>Gesetzt, wenn der OIDC-Handler nach einer fehlgeschlagenen Anmeldung hierher umgeleitet hat.</summary>
+    [SupplyParameterFromQuery(Name = AnmeldungEndpoints.ParameterFehler)]
+    public string? Fehler { get; set; }
+
+    private bool _abmeldegrundGeprueft;
+
+    private string? _abmeldegrund;
+
+    private void Abmelden() => Navigation.NavigateTo(AnmeldungEndpoints.PfadAbmeldung, forceReload: true);
+
+    // Vollreload: die HTTP-Pipeline gleicht die Claims mit der DB ab bzw. leitet zu eIAM.
+    private void ZurStartseite() => Navigation.NavigateTo("/", forceReload: true);
+
+    /// <summary>Meldet die Seite vom AuthenticationStateProvider ab.</summary>
+    public void Dispose() => AuthenticationStateProvider.AuthenticationStateChanged -= OnAuthenticationStateChanged;
+
+    protected override void OnInitialized()
+    {
+        // Freigeschaltete Benutzer (z.B. per Lesezeichen) gehören auf die Startseite.
+        if (AktuellerBenutzer.IstAutorisiert)
+        {
+            ZurStartseite();
+            return;
+        }
+
+        AuthenticationStateProvider.AuthenticationStateChanged += OnAuthenticationStateChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        // Immer abholen, auch wenn der Text gar nicht gezeigt wird: ein liegengebliebener Grund würde sonst beim nächsten
+        // manuellen Logout in diesem Tab fälschlich «wegen Inaktivität» melden.
+        try
+        {
+            await using var modul = await JsRuntime.InvokeAsync<IJSObjectReference>("import", SitzungsUeberwachung.ModulPfad);
+            _abmeldegrund = await modul.InvokeAsync<string?>("holeAbmeldegrund");
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+
+        _abmeldegrundGeprueft = true;
+        StateHasChanged();
+    }
+
+    // AuthorizeRouteView greift auf dieser [AllowAnonymous]-Seite nicht: wird der Circuit durch die Revalidierung anonym
+    // (Freischaltung, Sitzungsablauf), lädt die Seite selbst neu. Beim SignalR-Reconnect kommt der Cookie-Principal erneut
+    // an — dann nur neu laden, wenn er inzwischen autorisiert ist.
+    private void OnAuthenticationStateChanged(Task<AuthenticationState> stateTask) => _ = InvokeAsync(async () =>
+    {
+        var user = (await stateTask).User;
+        if (user.Identity?.IsAuthenticated != true || user.HasClaim(AuthKonstanten.ClaimAutorisiert, AuthKonstanten.ClaimWertTrue))
+        {
+            ZurStartseite();
+        }
+    });
+}

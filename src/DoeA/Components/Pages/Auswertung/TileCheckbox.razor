@@ -1,0 +1,20 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@* Checkbox mit nachgestellter Beschriftung in den Filterzeilen der Auswertungs-Kacheln.
+   Ohne umschliessendes Element, damit beide Teile Flex-Kinder der Zeile bleiben. *@
+<MudCheckBox T="bool" Value="@Wert" ValueChanged="@WertChanged" Dense="true" Class="ma-0" />
+<div class="tile-label-schmal">
+    <label class="form-label">@TranslationHelper.Translate(LabelKey)</label>
+</div>
+
+@code {
+    /// <summary>Zustand der Checkbox (Two-Way-Binding via <c>WertChanged</c>).</summary>
+    [Parameter] public bool Wert { get; set; }
+
+    /// <summary>Meldet den geänderten Zustand an die Kachel.</summary>
+    [Parameter] public EventCallback<bool> WertChanged { get; set; }
+
+    /// <summary>Übersetzungsschlüssel der Beschriftung rechts neben der Checkbox.</summary>
+    [Parameter, EditorRequired] public string LabelKey { get; set; } = string.Empty;
+}

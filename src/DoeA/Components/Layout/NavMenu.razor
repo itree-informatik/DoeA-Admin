@@ -1,0 +1,56 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+<nav class="nav-page-list @(_collapsed ? "collapsed" : "")" id="navmenu">
+    <div class="nav-toggle">
+        <MudIconButton Icon="@(_collapsed ? Icons.Material.Filled.ChevronRight : Icons.Material.Filled.ChevronLeft)"
+                       Size="Size.Small"
+                       OnClick="ToggleCollapsed" />
+    </div>
+    <ul class="nav-list">
+        @foreach (var item in MenuItems)
+        {
+            <li>
+                @* Im reduzierten Zustand ersetzt der native Tooltip die ausgeblendete Beschriftung. *@
+                <div class="nav-item" @onclick="@(() => ToggleItem(item))"
+                     title="@(_collapsed ? TranslationHelper.Translate(item.Text) : null)">
+                    @if (item.Children is { Count: > 0 } && string.IsNullOrEmpty(item.Url))
+                    {
+                        @* Aufklappbarer Bereich ohne eigenes Ziel: bewusst kein NavLink, das Aufklappen
+                           übernimmt der @onclick des umgebenden Containers. *@
+                        <span class="nav-link @item.Class">
+                            <MudIcon Icon="@item.Icon" Size="Size.Small" />
+                            <span class="nav-text">@TranslationHelper.Translate(item.Text)</span>
+                        </span>
+                    }
+                    else
+                    {
+                        <NavLink href="@item.Url"
+                                 class="@($"nav-link {item.Class2} {item.Class}")"
+                                 Match="NavLinkMatch.All">
+                            <MudIcon Icon="@item.Icon" Size="Size.Small" />
+                            <span class="nav-text">@TranslationHelper.Translate(item.Text)</span>
+                        </NavLink>
+                    }
+                </div>
+                @if (item.Children is { Count: > 0 })
+                {
+                    <div class="submenu-wrapper @(item.IsExpanded ? "expanded" : "")">
+                        <ul class="submenu">
+                            @foreach (var subItem in item.Children)
+                            {
+                                <li>
+                                    <NavLink class="nav-link"
+                                             href="@subItem.Url"
+                                             Match="NavLinkMatch.All">
+                                        @TranslationHelper.Translate(subItem.Text)
+                                    </NavLink>
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                }
+            </li>
+        }
+    </ul>
+</nav>

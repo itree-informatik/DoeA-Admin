@@ -1,0 +1,92 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL */
+
+/* Das Menü steuert seine Breite selbst (die Sidebar im Layout folgt per fit-content),
+   damit der Collapse-Zustand nicht ins Layout durchgereicht werden muss. */
+nav {
+    width: 250px;
+    transition: width 0.2s ease;
+}
+
+nav.collapsed {
+    width: 56px;
+}
+
+/* Unterhalb des Layout-Umbruchs (Menü oberhalb des Inhalts) bleibt die Breite dem Layout überlassen. */
+@media (max-width: 640.98px) {
+    nav, nav.collapsed {
+        width: auto;
+    }
+}
+
+.nav-toggle {
+    display: flex;
+    justify-content: flex-end;
+}
+
+nav.collapsed .nav-toggle {
+    justify-content: center;
+}
+
+nav.collapsed ::deep .nav-text {
+    display: none;
+}
+
+nav.collapsed .submenu-wrapper {
+    display: none;
+}
+
+.nav-list {
+    list-style: none;
+    padding-left: 0;
+}
+
+.nav-item {
+    cursor: pointer;
+    padding: 5px 0;
+}
+
+.submenu-wrapper {
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transition: all 0.3s ease;
+}
+
+    .submenu-wrapper.expanded {
+        max-height: 500px; /* hoch genug für viele Untereinträge */
+        opacity: 1;
+    }
+
+.submenu {
+    list-style: none;
+    padding-left: 20px;
+    padding-top:2px;
+    padding-bottom: 2px;
+}
+
+.submenu li {
+    border-bottom: 1px solid #ccc !important;
+    text-decoration: none !important;
+    width: 80%;
+}
+
+/* ::deep, weil die Links von NavLink gerendert werden — deren <a> erhält das Scope-Attribut
+   der Komponente nicht und würde von einer reinen .nav-link-Regel nicht getroffen.
+   inline-flex richtet Icon und Beschriftung auf eine Linie aus. */
+::deep .nav-link {
+    text-decoration: none !important;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+}
+
+.nav-page-list .nav-item {
+    border-bottom: 1px solid #ccc !important;
+    display: block;
+    padding: 10px 0;
+    text-decoration: none;
+    color: inherit;
+}
+

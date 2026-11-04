@@ -1,0 +1,25 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@* Logo und Titel sind in MainLayout und AnmeldungLayout identisch; die rechte Seite (Sprachwahl, Benutzer, Abmelden)
+   unterscheidet sich und kommt deshalb als ChildContent vom Layout. *@
+<header class="d-flex" role="banner">
+    <div class="logo d-flex">
+        <div class="d-flex align-items-center me-3">
+            <img src="img/logo.png" alt="Bundesamt für Bauten und Logistik BBL">
+        </div>
+        <div class="text-container ps-5">
+            <h2 class="text">Bundesamt für Bauten und Logistik BBL</h2>
+            <h1 class="h4 titel">Dienst öffentliche Ausschreibungen</h1>
+        </div>
+    </div>
+    <div class="header-actions">
+        @ChildContent
+    </div>
+</header>
+
+@code {
+    /// <summary>Inhalt der rechten Seite der Kopfzeile (Sprachwahl, Benutzer, Abmelden).</summary>
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+}

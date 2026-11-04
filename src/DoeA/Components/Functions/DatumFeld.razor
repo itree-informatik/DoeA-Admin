@@ -1,0 +1,28 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@* Beschriftetes Datumsfeld für DateOnly-Werte. Fixe Breite (Klasse datepicker-schmal, s. app.css) statt
+   Flex-Wachstum: schmal, aber ein gewähltes Datum bleibt inkl. Clear-/Kalender-Icon
+   vollständig sichtbar (bei 140px würde das Jahr abgeschnitten). *@
+<div class="d-flex flex-column">
+    <label class="form-label">@TranslationHelper.Translate(LabelKey)</label>
+    <ItreeDatePicker TValue="DateOnly?" Value="@Datum" ValueChanged="@DatumChanged" Clearable="true" Class="datepicker-schmal" Enabled="@Enabled" />
+</div>
+
+@code {
+    /// <summary>Übersetzungsschlüssel der Feldbeschriftung.</summary>
+    [Parameter, EditorRequired]
+    public string LabelKey { get; set; } = string.Empty;
+
+    /// <summary>Angezeigtes Datum.</summary>
+    [Parameter]
+    public DateOnly? Datum { get; set; }
+
+    /// <summary>Meldet das geänderte Datum (für @bind-Datum).</summary>
+    [Parameter]
+    public EventCallback<DateOnly?> DatumChanged { get; set; }
+
+    /// <summary>Erlaubt die Eingabe; Standard true.</summary>
+    [Parameter]
+    public bool Enabled { get; set; } = true;
+}

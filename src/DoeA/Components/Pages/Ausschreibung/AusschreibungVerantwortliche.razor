@@ -1,0 +1,76 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Data.Models.DTO
+@using DoeA.Data.Models.DTO.Stammdaten
+
+@* Verantwortliche Personen: aufklappbar, standardmässig offen. Die Auswahllisten kommen von
+   der Seite (inkl. nachgeladener inaktiver Personen), damit die Selects nie kurzzeitig eine
+   GUID statt des Namens anzeigen. *@
+<fieldset class="form-fieldset @(_expanded ? null : "fieldset-zugeklappt") mb-4">
+    <legend class="fieldset-legend legend-klappbar" @onclick="() => _expanded = !_expanded">
+        <i class="bi @(_expanded ? "bi-chevron-down" : "bi-chevron-right") me-1"></i>@TranslationHelper.Translate("AUSSCHREIBUNG_VERANTWORTLICHE_PERSONEN")
+    </legend>
+    @if (_expanded)
+    {
+    <div class="d-flex flex-wrap gap-4 mb-2">
+        <div class="d-flex flex-column">
+            <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_SACHBEARBEITER_DOEA")</label>
+            <ItreeComboBox TItem="Sachbearbeiter" TValue="Guid?" Data="AuswahlDoea" TextField="Fullname" ValueField="Id" Class="field-medium"
+                           Value="@Ausschreibung.SacDoeAId" ValueChanged="@(v => Uebernehmen(() => Ausschreibung.SacDoeAId = v))"
+                           DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" Clearable="true" />
+            <ValidationMessage For="() => Ausschreibung.SacDoeAId" />
+        </div>
+
+        <div class="d-flex flex-column">
+            <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_SACHBEARBEITER_RD")</label>
+            <ItreeComboBox TItem="Sachbearbeiter" TValue="Guid?" Data="AuswahlRd" TextField="Fullname" ValueField="Id" Class="field-medium"
+                           Value="@Ausschreibung.SacRdId" ValueChanged="@(v => Uebernehmen(() => Ausschreibung.SacRdId = v))"
+                           DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" Clearable="true" />
+        </div>
+
+        <div class="d-flex flex-column">
+            <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_SACHBEARBEITER_BBL")</label>
+            <ItreeComboBox TItem="Sachbearbeiter" TValue="Guid?" Data="AuswahlBbl" TextField="Fullname" ValueField="Id" Class="field-medium"
+                           Value="@Ausschreibung.SacBblId" ValueChanged="@(v => Uebernehmen(() => Ausschreibung.SacBblId = v))"
+                           DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" Clearable="true" />
+        </div>
+
+        <div class="d-flex flex-column">
+            <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_EXTERN")</label>
+            <MudTextField T="string" Class="field-medium" Value="@Ausschreibung.Extern"
+                          ValueChanged="@((string v) => Uebernehmen(() => Ausschreibung.Extern = v))" />
+        </div>
+    </div>
+    }
+</fieldset>
+
+@code {
+    /// <summary>Bearbeitete Ausschreibung — die Zuweisungen werden direkt auf ihr gesetzt.</summary>
+    [Parameter, EditorRequired]
+    public Ausschreibung Ausschreibung { get; set; } = null!;
+
+    /// <summary>Auswahl der DöA-Sachbearbeiter (aktive plus allenfalls die zugewiesene inaktive Person).</summary>
+    [Parameter, EditorRequired]
+    public IEnumerable<Sachbearbeiter> AuswahlDoea { get; set; } = [];
+
+    /// <summary>Auswahl der RD-Sachbearbeiter (aktive plus allenfalls die zugewiesene inaktive Person).</summary>
+    [Parameter, EditorRequired]
+    public IEnumerable<Sachbearbeiter> AuswahlRd { get; set; } = [];
+
+    /// <summary>Auswahl der BBL-Sachbearbeiter (aktive plus allenfalls die zugewiesene inaktive Person).</summary>
+    [Parameter, EditorRequired]
+    public IEnumerable<Sachbearbeiter> AuswahlBbl { get; set; } = [];
+
+    /// <summary>Meldet jede Änderung an die Seite, damit deren Dirty-Check neu rendert (Speichern-Button).</summary>
+    [Parameter]
+    public EventCallback OnGeaendert { get; set; }
+
+    private bool _expanded = true;
+
+    private Task Uebernehmen(Action setzen)
+    {
+        setzen();
+        return OnGeaendert.InvokeAsync();
+    }
+}

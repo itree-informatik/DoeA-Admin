@@ -1,0 +1,183 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@page "/stammdaten/{TypString}"
+@implements IDisposable
+@inject ConfirmService ConfirmService
+
+<ItreeSiteTitle TranslationKey="STAMMDATEN" />
+
+<ItreeTabs Class="tabstrip_stammdaten" @bind-ActivePanelIndex="@_activeTabIndex" KeepPanelsAlive="true">
+    @foreach (var item in MenuTabs.Where(m => m.Typ == Typ).OrderBy(m => m.Sort))
+    {
+        <ItreeTabPanel Id="@item.Id" Text="@TranslationHelper.Translate(item.Id)">
+            <DynamicComponent Type="@item.ComponentType" />
+        </ItreeTabPanel>
+    }
+</ItreeTabs>
+
+@code {
+    /// <summary>Bereich aus der Route (siehe <see cref="EnumStammdatenNavigation"/>); bestimmt die Tabs.</summary>
+    [Parameter]
+    public string TypString { get; set; } = "Generell";
+
+    private sealed record StammdatenTab
+    {
+        public required string Id { get; init; }
+        public required int Sort { get; init; }
+        public required Type ComponentType { get; init; }
+        public required EnumStammdatenNavigation Typ { get; init; }
+    }
+
+    private static readonly List<StammdatenTab> MenuTabs = new()
+    {
+        new()
+        {
+            Id = "MENU_STAMMDATEN_BKPNUMMER",
+            Sort = 0,
+            ComponentType = typeof(BkpNummerSeite),
+            Typ = EnumStammdatenNavigation.Generell
+        },
+        new()
+        {
+            Id = "MENU_STAMMDATEN_CPVNUMMER",
+            Sort = 1,
+            ComponentType = typeof(CpvNummerSeite),
+            Typ = EnumStammdatenNavigation.Generell
+        },
+        new()
+        {
+            Id = "MENU_STAMMDATEN_LAND",
+            Sort = 3,
+            ComponentType = typeof(LandSeite),
+            Typ = EnumStammdatenNavigation.Geographische
+        },
+        new()
+        {
+            Id = "MENU_STAMMDATEN_KANTON",
+            Sort = 4,
+            ComponentType = typeof(KantonSeite),
+            Typ = EnumStammdatenNavigation.Geographische
+        },
+        new()
+        {
+            Id = "MENU_STAMMDATEN_ORTSCHAFT",
+            Sort = 5,
+            ComponentType = typeof(OrtschaftSeite),
+            Typ = EnumStammdatenNavigation.Geographische
+        },
+        new()
+        {
+            Id = "MENU_STAMMDATEN_AMT",
+            Sort = 6,
+            ComponentType = typeof(AmtSeite),
+            Typ = EnumStammdatenNavigation.Organisation
+        },
+        new()
+        {
+            Id = "MENU_STAMMDATEN_DEPARTEMENT",
+            Sort = 7,
+            ComponentType = typeof(DepartementSeite),
+            Typ = EnumStammdatenNavigation.Organisation
+        },
+        new()
+        {
+            Id = "MENU_STAMMDATEN_RESSORT",
+            Sort = 8,
+            ComponentType = typeof(RessortSeite),
+            Typ = EnumStammdatenNavigation.Organisation
+        },
+        new()
+        {
+            Id = "MENU_STAMMDATEN_SACHBEARBEITER",
+            Sort = 9,
+            ComponentType = typeof(SachbearbeiterSeite),
+            Typ = EnumStammdatenNavigation.Organisation
+        },
+        new()
+        {
+            Id = "MENU_STAMMDATEN_ORGANISATIONSZUGEHOERIGKEIT",
+            Sort = 10,
+            ComponentType = typeof(OrganisationszugehoerigkeitSeite),
+            Typ = EnumStammdatenNavigation.Organisation
+        },
+        new()
+        {
+            Id = "MENU_STAMMDATEN_LEISTUNGSART",
+            Sort = 11,
+            ComponentType = typeof(LeistungsartSeite),
+            Typ = EnumStammdatenNavigation.Projekt
+        },
+        new()
+        {
+            Id = "MENU_STAMMDATEN_VERFAHRENSSCHRITT",
+            Sort = 12,
+            ComponentType = typeof(VerfahrensschrittSeite),
+            Typ = EnumStammdatenNavigation.Projekt
+        },
+        new()
+        {
+            Id = "MENU_STAMMDATEN_OFFERTEZUSTAND",
+            Sort = 13,
+            ComponentType = typeof(OffertezustandSeite),
+            Typ = EnumStammdatenNavigation.Projekt
+        },
+        new()
+        {
+            Id = "MENU_STAMMDATEN_VERFAHRENSART",
+            Sort = 14,
+            ComponentType = typeof(VerfahrensartSeite),
+            Typ = EnumStammdatenNavigation.Projekt
+        },
+        new()
+        {
+            Id = "MENU_STAMMDATEN_PROJEKTART",
+            Sort = 15,
+            ComponentType = typeof(ProjektartSeite),
+            Typ = EnumStammdatenNavigation.Projekt
+        },
+        new()
+        {
+            Id = "MENU_STAMMDATEN_ROLLEINAUSSCHREIBUNG",
+            Sort = 16,
+            ComponentType = typeof(RolleInAusschreibungSeite),
+            Typ = EnumStammdatenNavigation.Projekt
+        },
+        new()
+        {
+            Id = "MENU_STAMMDATEN_DOKUMENTART",
+            Sort = 17,
+            ComponentType = typeof(DokumentartSeite),
+            Typ = EnumStammdatenNavigation.Projekt
+        }
+    };
+
+    private int _activeTabIndex;
+
+    private string _typString = string.Empty;
+
+    private EnumStammdatenNavigation Typ => Enum.TryParse<EnumStammdatenNavigation>(TypString, true, out var typ) ? typ : EnumStammdatenNavigation.Generell;
+
+    private void OnConfirmChanged() => InvokeAsync(StateHasChanged);
+
+    protected override void OnInitialized()
+    {
+        ConfirmService.OnChange += OnConfirmChanged;
+    }
+
+    protected override void OnParametersSet()
+    {
+        // Beim Wechsel des Bereichs wieder auf den ersten Tab springen.
+        if (TypString != _typString)
+        {
+            _typString = TypString;
+            _activeTabIndex = 0;
+        }
+    }
+
+    /// <summary>Meldet die Seite vom Bestätigungs-Event ab.</summary>
+    public void Dispose()
+    {
+        ConfirmService.OnChange -= OnConfirmChanged;
+    }
+}

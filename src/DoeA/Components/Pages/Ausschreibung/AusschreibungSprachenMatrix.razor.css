@@ -1,0 +1,35 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL */
+
+.sprachen-container {
+    display: flex;
+    justify-content: flex-end;
+    align-items: flex-start;
+    flex: 0 0 auto;
+    margin-top: 0;
+}
+
+.sprachen-matrix {
+    display: grid;
+    grid-template-columns: 150px repeat(4, 100px);
+    gap: 8px;
+    align-items: center;
+    min-width: 550px;
+}
+
+.sprach-header-cell {
+    font-size: 13px;
+    text-align: center;
+}
+
+.sprach-dokumentart-cell {
+    font-size: 13px;
+    text-align: right;
+    padding-right: 10px;
+}
+
+.sprach-checkbox-cell {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}

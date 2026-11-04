@@ -1,0 +1,107 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Interfaces.Auswertungen
+@inject IAuswertungService AuswertungService
+@inject IJSRuntime JsRuntime
+@inherits BaseComponent
+
+<TileTitle TitleKey="AUSWERTUNG_TILE_ABBRUCHWIDERRUF"/>
+
+@if (_isLoading)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <div class="d-flex flex-column">
+        <label class="form-label">@TranslationHelper.Translate("AUSWERTUNG_TILE_ABBRUCHWIDERRUF_JAHR")</label>
+        <ItreeDropDownList TItem="int" TValue="int" Data="_jahre" Value="@_selectedJahr" ValueChanged="@JahrChanged"
+                           DefaultText="@TranslationHelper.Translate("DROPDOWN_DEFAULT")" />
+    </div>
+    <SelectAemter @ref="_selectAemter"/>
+    <div class="d-flex d-flex-column gap-2">
+        <ItreeButton Icon="@MudBlazor.Icons.Material.Filled.PictureAsPdf"
+                     ButtonTextKey="AUSWERTUNG_TILE_ABBRUCHWIDERRUF_PDF_ERSTELLEN"
+                     ShowButtonText="true"
+                     OnClick="CreatePdf"
+                     Enabled="@(_selectedJahr > 0 && !IstAmErstellen)"
+                     SpinnerIsLoading="@_isCreatingPdf"/>
+        <ItreeButton Icon="@MudBlazor.Icons.Material.Filled.TableChart"
+                     ButtonTextKey="AUSWERTUNG_TILE_ABBRUCHWIDERRUF_EXCEL_ERSTELLEN"
+                     ShowButtonText="true"
+                     OnClick="@CreateExcel"
+                     Enabled="@(_selectedJahr > 0 && !IstAmErstellen)"
+                     SpinnerIsLoading="@_isCreatingExcel"/>
+    </div>
+}
+
+@code {
+    /// <summary>Meldet der Seite, dass sich der Filter geändert hat.</summary>
+    [Parameter]
+    public EventCallback Refresh { get; set; }
+
+    private bool _isCreatingExcel;
+    private bool _isCreatingPdf;
+    private bool _isLoading = true;
+
+    private int _selectedJahr;
+
+    private readonly List<int> _jahre = new();
+
+    private SelectAemter? _selectAemter;
+
+    private bool IstAmErstellen => _isCreatingPdf || _isCreatingExcel;
+
+    protected override void OnInitialized()
+    {
+        // Bewusst erst ab dem viertletzten Jahr: die jüngeren Jahrgänge sind noch nicht
+        // abgeschlossen und werden hier nicht zur Auswahl angeboten.
+        for (var jahr = DateTime.Now.Year - 4; jahr > 2000; jahr--)
+        {
+            _jahre.Add(jahr);
+        }
+
+        _selectedJahr = _jahre[0];
+        _isLoading = false;
+    }
+
+    private async Task JahrChanged(int jahr)
+    {
+        _selectedJahr = jahr;
+        await Refresh.InvokeAsync();
+    }
+
+    private async Task CreatePdf() => await CreateDoc(false);
+
+    private async Task CreateExcel() => await CreateDoc(true);
+
+    private async Task CreateDoc(bool excel)
+    {
+        if (_selectedJahr == 0 || IstAmErstellen)
+        {
+            return;
+        }
+
+        if (excel)
+        {
+            _isCreatingExcel = true;
+        }
+        else
+        {
+            _isCreatingPdf = true;
+        }
+
+        StateHasChanged();
+
+        await ErrorHandler.HandleAsync(async () =>
+        {
+            var id = await AuswertungService.GetAbbruchWiderrufAsync(
+                _selectedJahr, _selectAemter!.Departement, _selectAemter.Aemter, excel);
+            await DownloadFileFromStream(JsRuntime, new Guid(id));
+        });
+
+        _isCreatingPdf = false;
+        _isCreatingExcel = false;
+    }
+}

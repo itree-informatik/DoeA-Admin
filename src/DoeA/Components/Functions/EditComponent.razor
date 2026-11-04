@@ -1,0 +1,281 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using System.Collections.ObjectModel
+@using DoeA.Data.Models.DTO
+@using FluentValidation
+
+@inherits BaseComponent
+
+@inject IJSRuntime JsRuntime
+@inject IServiceProvider ServiceProvider
+@inject ConfirmService ConfirmService
+
+@typeparam TModel where TModel : Basis
+@typeparam TService where TService : IBaseService<TModel>
+
+@* Basis der Stammdaten-Seiten: lädt die Liste, hält die Auswahl und kapselt Speichern, Abbrechen
+   und Löschen inklusive Bestätigungsdialog. Die Seiten liefern nur noch Grid und Formular. *@
+
+@code {
+    /// <summary>
+    /// Wird gesetzt, wenn die Seite als Auswahl-Popout eingebettet ist: Die Seite meldet gewählte
+    /// Einträge an den Aufrufer und läuft mit kompakter fester Seitengrösse statt Fensterhöhen-Messung.
+    /// </summary>
+    [Parameter]
+    public EventCallback<TModel> OnSelect { get; set; }
+
+    /// <summary>
+    /// IgnorePropertyList der Formulare (mit WithBaseProperties="true"): der ItreeMud-Standard ohne Aktiv, damit ein
+    /// Datensatz im Formular deaktiviert werden kann.
+    /// </summary>
+    protected const string BasisfelderAusgeblendet = "Id,NaturalId,InsertedDate,InsertedUser,ChangedDate,ChangedUser,TranslatedText";
+
+    private const int PopoutPageSize = 10;
+    private const int StandardPageSize = 20;
+
+    /// <summary>Schränkt die Suche auf aktive Einträge ein (an die Searchbox gebunden).</summary>
+    protected bool NurAktive = true;
+
+    /// <summary>Zeilen pro Seite; wird beim ersten Render an die sichtbare Fensterhöhe angepasst.</summary>
+    protected int PageSize = StandardPageSize;
+
+    /// <summary>Auswahlmöglichkeiten des Pagers.</summary>
+    protected List<int?> PageSizeOptions = [10, 20, 25, 50, 100];
+
+    /// <summary>Suchbegriff der Searchbox.</summary>
+    protected string SearchValue = string.Empty;
+
+    /// <summary>Properties, die beim Änderungsvergleich ignoriert werden (kommasepariert).</summary>
+    protected string? IgnoreProperties { get; set; }
+
+    /// <summary>Datensätze des Grids.</summary>
+    protected ObservableCollection<TModel>? DataList;
+
+    /// <summary>Validator des Formulars; wird von der Seite gesetzt.</summary>
+    protected IValidator? Validator;
+
+    /// <summary>Im Formular bearbeiteter Datensatz (Clone) — <c>null</c> heisst: Formular zu.</summary>
+    protected TModel? SelectedItem { get; set; }
+
+    /// <summary>Service des konkreten Stammdatentyps.</summary>
+    protected IBaseService<TModel>? Service { get; private set; }
+
+    private TModel? _deletedItem;
+    private TModel? _originalItem;
+
+    /// <summary>Lädt die Liste anhand von Suchbegriff und Aktiv-Filter neu.</summary>
+    protected async Task LoadData() => DataList = await Service!.Search(SearchValue, NurAktive);
+
+    /// <summary>
+    /// Passt <see cref="PageSize"/> beim ersten Render an die Fensterhöhe an — nur beim direkten
+    /// Aufruf: Im Auswahl-Popout sieht die Messung das ganze Fenster und würde die bewusst
+    /// kompakte Seitengrösse wieder überschreiben.
+    /// </summary>
+    protected virtual bool AutoPageSize => !OnSelect.HasDelegate;
+
+    /// <summary>Erweiterungspunkt für die Seite nach erfolgreichem Speichern.</summary>
+    protected virtual Task OnAfterSave() => Task.CompletedTask;
+
+    /// <summary>Erweiterungspunkt für die Seite nach bestätigtem Löschen.</summary>
+    protected virtual Task OnAfterDeleteConfirm() => Task.CompletedTask;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Service ??= ServiceProvider.GetService<TService>();
+        if (Service == null)
+        {
+            throw new InvalidOperationException($"No IBaseService<{typeof(TModel).Name}> found for EditComponent.");
+        }
+
+        // Als Auswahl-Popout eingebettet ist wenig Platz — kompakte feste Seitengrösse.
+        if (OnSelect.HasDelegate)
+        {
+            PageSize = PopoutPageSize;
+        }
+
+        DataList = new ObservableCollection<TModel>((await Service.GetAll())!);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !AutoPageSize)
+        {
+            return;
+        }
+
+        // Seitengrösse an die tatsächlich sichtbaren Zeilen anpassen; passt die ganze Liste
+        // ohnehin auf eine Seite, bleibt es beim Standardwert.
+        var sichtbareZeilen = await JsRuntime.InvokeAsync<int>("GetVisibleRowCount");
+        if (DataList?.Count < sichtbareZeilen)
+        {
+            PageSize = StandardPageSize;
+        }
+        else
+        {
+            PageSize = sichtbareZeilen;
+            if (!PageSizeOptions.Contains(sichtbareZeilen))
+            {
+                PageSizeOptions = PageSizeOptions.Append(sichtbareZeilen).OrderBy(p => p).ToList();
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    /// <summary>Öffnet den angeklickten Datensatz im Formular.</summary>
+    protected async Task SelectItem(ItreeGridRowClickEventArgs args)
+    {
+        if (args.Item is TModel item)
+        {
+            await SelectItem(item);
+        }
+    }
+
+    /// <summary>Öffnet einen Datensatz im Formular; <c>Id == Guid.Empty</c> legt einen neuen an.</summary>
+    protected async Task SelectItem(TModel? item)
+    {
+        if (item == null)
+        {
+            return;
+        }
+
+        // Neue Datensätze sind standardmässig aktiv (Checkbox vorbelegt; vom Nutzer abwählbar).
+        // Vor dem Clonen setzen, damit Original und Auswahl übereinstimmen (keine Phantom-Änderung).
+        if (item.Id == Guid.Empty)
+        {
+            item.Aktiv = true;
+        }
+
+        _originalItem = item;
+        SelectedItem = _originalItem.Clone();
+
+        await JsRuntime.InvokeVoidAsync("FocusElementById", "textbox_bezeichnung");
+        StateHasChanged();
+    }
+
+    /// <summary>Speichert den bearbeiteten Datensatz und schliesst das Formular.</summary>
+    protected async Task Save()
+    {
+        if (SelectedItem == null)
+        {
+            return;
+        }
+
+        // Fehler (z.B. Unique-Constraint-Verletzung) im Fehlerfenster anzeigen statt den
+        // Circuit zu beenden; das Formular bleibt in diesem Fall offen.
+        var istNeu = SelectedItem.Id == Guid.Empty;
+        var erfolgreich = false;
+        var gespeichert = default(TModel);
+        await ErrorHandler.HandleAsync(async () =>
+        {
+            gespeichert = istNeu
+                ? await Service!.Create(SelectedItem)
+                : await Service!.Update(SelectedItem, IgnoreProperties ?? string.Empty);
+            erfolgreich = true;
+            return new ServiceResult<TModel>();
+        });
+
+        if (!erfolgreich)
+        {
+            // Die Validierung stempelt vor dem Insert bereits eine Id auf das Modell.
+            // Zurücksetzen, damit der nächste Speicherversuch wieder als Neuanlage läuft
+            // (sonst liefe er als Update auf eine nie eingefügte Zeile).
+            if (istNeu)
+            {
+                SelectedItem.Id = Guid.Empty;
+            }
+
+            return;
+        }
+
+        SelectedItem = gespeichert!;
+        _originalItem = SelectedItem.Clone();
+
+        if (DataList != null)
+        {
+            var vorhanden = DataList.SingleOrDefault(d => d.Id == SelectedItem.Id);
+            if (vorhanden != null)
+            {
+                DataList.Remove(vorhanden);
+            }
+
+            DataList.Add(SelectedItem);
+        }
+
+        SelectedItem = null;
+        await OnAfterSave();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Schliesst das Formular; bei Änderungen erst nach Rückfrage.</summary>
+    protected async Task Cancel()
+    {
+        if (_originalItem.IsEqual(SelectedItem, IgnoreProperties))
+        {
+            _originalItem = default;
+            SelectedItem = default;
+        }
+        else
+        {
+            ConfirmService.ShowCancelConfirm(async bestaetigt =>
+            {
+                if (bestaetigt)
+                {
+                    _originalItem = default;
+                    SelectedItem = default;
+                }
+
+                await InvokeAsync(StateHasChanged);
+            });
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Löscht den im Formular geöffneten Datensatz nach Rückfrage.</summary>
+    protected async Task Delete()
+    {
+        if (SelectedItem != null)
+        {
+            await DeleteItem(SelectedItem);
+        }
+    }
+
+    /// <summary>Löscht einen Datensatz nach Rückfrage (z.B. direkt aus einer Grid-Zeile).</summary>
+    protected async Task DeleteItem(TModel item)
+    {
+        _deletedItem = item;
+        ConfirmService.ShowDeleteConfirm(async bestaetigt =>
+        {
+            if (bestaetigt && _deletedItem != null)
+            {
+                var erfolgreich = false;
+                await ErrorHandler.HandleAsync(async () =>
+                {
+                    await Service!.Delete(_deletedItem.Id);
+                    erfolgreich = true;
+                    return new ServiceResult<TModel>();
+                });
+
+                if (erfolgreich)
+                {
+                    SelectedItem = null;
+
+                    // Der gelöschte Datensatz kann ein Clone sein (siehe SelectItem) — Original per Id suchen.
+                    var vorhanden = DataList?.SingleOrDefault(d => d.Id == _deletedItem.Id);
+                    if (vorhanden != null)
+                    {
+                        DataList!.Remove(vorhanden);
+                    }
+
+                    await OnAfterDeleteConfirm();
+                }
+            }
+
+            await InvokeAsync(StateHasChanged);
+        });
+
+        await InvokeAsync(StateHasChanged);
+    }
+}

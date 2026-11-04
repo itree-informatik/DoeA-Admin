@@ -1,0 +1,992 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@page "/ausschreibung/{AusId:guid}"
+@using DoeA.Data.Models.DTO
+@using DoeA.Data.Models.DTO.Stammdaten
+@using DoeA.Interfaces.Stammdaten
+@using DoeA.Validator
+@using DoeA.Services
+
+@inherits BaseComponent
+@implements IDisposable
+
+@layout AusschreibungLayout
+
+@inject IAmtService AmtService
+@inject IRessortService RessortsService
+@inject ISachbearbeiterService SachbearbeiterService
+@inject ILeistungsartService LeistungsartService
+@inject IRolleInAusschreibungService RolleInAusschreibungService
+@inject IDokumentartService DokumentartService
+@inject ISpracheService SpracheService
+@inject IAusschreibungService AusschreibungService
+@inject IProjektartService ProjektartService
+@inject IVerfahrensartService VerfahrensartService
+@inject IKonfigurationService KonfigurationService
+@inject INavigationService NavigationService
+@inject ConfirmService ConfirmService
+@inject AusschreibungEditState EditState
+@inject AusschreibungVorlageState VorlageState
+@inject AusschreibungSucheState SucheState
+
+@if (_isLoading)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <EditForm Model="@Ausschreibung" OnValidSubmit="Save">
+        <ItreeFluentValidationValidator Validator="_validator" />
+        <div class="mt-4" id="ausschreibungEdit">
+            <div class="d-flex flex-wrap gap-4 mb-3">
+                @* Jahr zuerst: Es wird vor Projekt- und Verfahrensart festgelegt und bestimmt die Nummer. *@
+                <div class="d-flex flex-column">
+                    <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_JAHR")</label>
+                    <MudNumericField T="int?" @bind-Value="Ausschreibung!.Jahr" />
+                    <ValidationMessage For="() => Ausschreibung!.Jahr" />
+                </div>
+
+                <div class="d-flex flex-column flex-grow-0 feld-w-250">
+                    <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_PROJEKTART")</label>
+                    <ItreeComboBox TItem="Projektart" TValue="Guid?" Data="Projektarten" TextField="Bezeichnung" ValueField="Id"
+                                   Value="@(Ausschreibung!.PraId == Guid.Empty ? (Guid?)null : Ausschreibung!.PraId)" ValueChanged="@ProjektartChanged"
+                                   Enabled="@(Ausschreibung!.Id == Guid.Empty)" DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" />
+                    <ValidationMessage For="() => Ausschreibung!.PraId" />
+                </div>
+
+                <div class="d-flex flex-column flex-grow-0 feld-w-250">
+                    <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_VERFAHRENSART")</label>
+                    <ItreeComboBox @key="_verfahrensartSelectKey" TItem="Verfahrensart" TValue="Guid?" Data="Verfahrensarten" TextField="Bezeichnung" ValueField="Id"
+                                   Value="@(Ausschreibung!.VeaId == Guid.Empty ? (Guid?)null : Ausschreibung!.VeaId)" ValueChanged="@VerfahrensartChanged"
+                                   DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" />
+                    <ValidationMessage For="() => Ausschreibung!.VeaId" />
+                </div>
+                @if (Ausschreibung.Projektart.NaturalId == EnumProjektart.Bau.ToString())
+                {
+                    <AusschreibungPicker LabelKey="AUSSCHREIBUNG_HAUPTPROJEKT"
+                                         ModalTitleKey="AUSSCHREIBUNG_HAUPTPROJEKT_AUSWAEHLEN"
+                                         @bind-Verweis="Ausschreibung.Hauptprojekt"
+                                         OnSelected="OnHauptprojektAusgewaehlt"
+                                         AusschreibungId="Ausschreibung!.Id"
+                                         SearchForHauptprojekt="true"
+                                         Enabled="@(Ausschreibung!.Id == Guid.Empty)" />
+                }
+                @if (VerfahrensartRegeln.DarfVorankuendigungReferenzieren(Ausschreibung!.Verfahrensart.NaturalId))
+                {
+                    <AusschreibungPicker LabelKey="AUSSCHREIBUNG_VORANKUENDIGUNG"
+                                         ModalTitleKey="AUSSCHREIBUNG_VORANKUENDIGUNG_AUSWAEHLEN"
+                                         @bind-Verweis="Ausschreibung.Vorankuendigung"
+                                         OnSelected="OnVorankuendigungAusgewaehlt"
+                                         AusschreibungId="Ausschreibung!.Id"
+                                         VerfahrensartFilter="@VerfahrensartRegeln.FilterVorankuendigung" />
+                }
+                @if (VerfahrensartRegeln.DarfRfiReferenzieren(Ausschreibung!.Verfahrensart.NaturalId))
+                {
+                    <AusschreibungPicker LabelKey="AUSSCHREIBUNG_RFI"
+                                         ModalTitleKey="AUSSCHREIBUNG_RFI_AUSWAEHLEN"
+                                         @bind-Verweis="Ausschreibung.Rfi"
+                                         AusschreibungId="Ausschreibung!.Id"
+                                         VerfahrensartFilter="@VerfahrensartRegeln.FilterRfi" />
+                }
+                @if (Ausschreibung!.ReferenziertVon.Any())
+                {
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_REFERENZIERT_VON")</label>
+                        @foreach (var r in Ausschreibung.ReferenziertVon)
+                        {
+                            <div class="d-flex align-items-center gap-2 mb-1 feld-w-600">
+                                <MudTextField T="string" ReadOnly="true" Disabled="true" Value="@($"{r.Bezeichnung} ({r.Verfahrensart.Bezeichnung})")" />
+                                <MudIconButton Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small" OnClick="@(() => NavigiereZuAusschreibung(r.Id))" />
+                            </div>
+                        }
+                    </div>
+                }
+
+            </div>
+
+            <div class="d-flex flex-wrap gap-4 mb-3">
+                <div class="d-flex flex-column flex-grow-1">
+                    <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_AMT")</label>
+                    <ItreeComboBox TItem="Amt" TValue="Guid?" Data="AemterAuswahl" TextField="Bezeichnung" ValueField="Id"
+                                   Value="@Ausschreibung!.AmtId" ValueChanged="@AmtChanged"
+                                   DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" />
+                    <ValidationMessage For="() => Ausschreibung!.AmtId" />
+                </div>
+
+                <div class="d-flex flex-column flex-grow-1">
+                    <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_RESSORT")</label>
+                    <ItreeComboBox TItem="Ressort" TValue="Guid?" Data="RessortsGefiltert" TextField="Bezeichnung" ValueField="Id"
+                                   @bind-Value="Ausschreibung!.ResId" DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" Clearable="true" />
+                </div>
+
+                <div class="d-flex flex-column">
+                    <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_SIMAPNR")</label>
+                    <MudTextField T="string" MaxLength="255" @bind-Value="Ausschreibung!.SimapNr" />
+                </div>
+
+                <div class="d-flex flex-column">
+                    <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_ABSCHLUSSJAHR")</label>
+                    <MudNumericField T="int?" @bind-Value="Ausschreibung!.AbschlussJahr" />
+                    <ValidationMessage For="() => Ausschreibung!.AbschlussJahr" />
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_BEZEICHNUNG")</label>
+                <MudTextField T="string" @bind-Value="Ausschreibung!.Bezeichnung" />
+                <ValidationMessage For="() => Ausschreibung.Bezeichnung" />
+            </div>
+
+            <div class="d-flex flex-wrap gap-4 mb-4">
+                <div class="flex-fixed feld-w-180">
+                    <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_ROLLEINAUSSCHREIBUNG")</label>
+                    <ItreeComboBox TItem="RolleInAusschreibung" TValue="Guid?" Data="RollenInAusschreibung" TextField="Bezeichnung" ValueField="Id"
+                                   @bind-Value="Ausschreibung!.RiaId"
+                                   DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" />
+                    <ValidationMessage For="() => Ausschreibung!.RiaId" />
+                </div>
+
+                <div class="flex-fixed feld-w-180">
+                    <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_LEISTUNGSART")</label>
+                    <ItreeComboBox TItem="Leistungsart" TValue="Guid?" Data="LeistungsartenGefiltert" TextField="Bezeichnung" ValueField="Id"
+                                   @bind-Value="Ausschreibung!.LeaId" DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" />
+                    <ValidationMessage For="() => Ausschreibung!.LeaId" />
+                </div>
+
+                <div class="flex-fixed feld-w-180">
+                    <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_STANDORT")</label>
+                    <MudTextField T="string" @bind-Value="Ausschreibung!.Standort" />
+                </div>
+
+                <div class="d-flex flex-column flex-fixed align-items-center feld-w-100">
+                    <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_PERSONALVERLEIH")</label>
+                    <InputCheckbox class="form-check-input" @bind-Value="Ausschreibung!.Personalverleih" />
+                </div>
+
+                <div class="d-flex flex-column flex-fixed align-items-center feld-w-180">
+                    <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_BESCHAFFUNGDEZENTRAL")</label>
+                    <InputCheckbox class="form-check-input" @bind-Value="Ausschreibung!.BeschaffungDezentral" />
+                </div>
+
+                <AusschreibungCpvNummern Ausschreibung="@(Ausschreibung!)" OnGeaendert="StateHasChanged" />
+
+            </div>
+
+            <AusschreibungVerantwortliche Ausschreibung="@(Ausschreibung!)"
+                                          AuswahlDoea="@SachbearbeiterDoeaAuswahl"
+                                          AuswahlRd="@SachbearbeiterRdAuswahl"
+                                          AuswahlBbl="@SachbearbeiterBblAuswahl"
+                                          OnGeaendert="StateHasChanged" />
+
+            @* Ausschreibung-/Publikation-Fieldset (Datum + Sprache): aufklappbar, standardmässig offen.
+               Titel bei Vorankündigungen und Freihändig "Publikation", sonst "Ausschreibung".
+               Erst sichtbar, sobald eine Verfahrensart gewählt ist — Inhalt und Titel hängen von ihr ab
+               (bei einer neuen Ausschreibung ist der Bereich darum anfänglich ausgeblendet). *@
+            @if (Ausschreibung!.VeaId != Guid.Empty)
+            {
+            <fieldset class="form-fieldset @(_ausschreibungBereichExpanded ? null : "fieldset-zugeklappt") mb-3">
+                <legend class="fieldset-legend legend-klappbar" @onclick="() => _ausschreibungBereichExpanded = !_ausschreibungBereichExpanded">
+                    <i class="bi @(_ausschreibungBereichExpanded ? "bi-chevron-down" : "bi-chevron-right") me-1"></i>@TranslationHelper.Translate(VerfahrensartRegeln.AusschreibungBereichTitelKey(Ausschreibung!.Verfahrensart.NaturalId))
+                </legend>
+                @if (_ausschreibungBereichExpanded)
+                {
+                @* flex-wrap: Bei schmalem Fenster rückt die Sprachen-Matrix unter die Datumsfelder, statt aus dem Rahmen zu fallen. *@
+                <div class="d-flex flex-wrap gap-3 justify-content-between align-items-start">
+
+                    <div class="d-flex flex-column gap-3">
+                        @* Eingereicht, Publikation und Verzögerung gehören zusammen und stehen immer auf einer Zeile,
+                           die Anzahl Tage direkt darunter. *@
+                        @switch (Ausschreibung!.Verfahrensart.NaturalId)
+                        {
+                            case nameof(EnumVerfahrensart.Selektiv):
+                                @* Ein gemeinsames Raster, damit die Spalten über alle Zeilen fluchten. Die Präqualifikation
+                                   (Eingereicht, Publikation, Verzögerung) wird als Offertzustand «Zuschlag Präqualifikation» erfasst. *@
+                                <div class="datum-raster spalten-4">
+                                    <DatumFeld LabelKey="AUSSCHREIBUNG_EINGEREICHT" @bind-Datum="Ausschreibung!.Eingereicht" />
+                                    <DatumFeld LabelKey="AUSSCHREIBUNG_PUBLIKATION_PHASE1" @bind-Datum="Ausschreibung!.Publikation" />
+                                    <VerzoegerungFeld @bind-Wert="Ausschreibung!.VerzoegerungDurchAuftraggeber" />
+                                    <DatumFeld LabelKey="AUSSCHREIBUNG_EINGABEFRISTTEILNAHME" @bind-Datum="Ausschreibung!.EingabefristTeilnahme" />
+                                    <AnzahlTageFeld Eingereicht="@Ausschreibung!.Eingereicht" Publikation="@Ausschreibung!.Publikation" Frist="@_fristPublikation"
+                                                    MeldungEingereicht="() => Ausschreibung!.Eingereicht" MeldungPublikation="() => Ausschreibung!.Publikation" />
+
+                                    <div class="d-flex flex-column">
+                                        <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_PFLICHTENHEFTERPRAEQUALI")</label>
+                                        <MudNumericField T="int" Min="0" @bind-Value="Ausschreibung!.PflichtenhefterPraequali" />
+                                    </div>
+                                    <div class="d-flex flex-column">
+                                        <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_ANZAHLTEILNEHMER")</label>
+                                        <MudNumericField T="int" Min="0" @bind-Value="Ausschreibung!.AnzahlTeilnehmer" />
+                                    </div>
+                                    <DatumFeld LabelKey="AUSSCHREIBUNG_VERSANDPH2" @bind-Datum="Ausschreibung!.VersandPh2" />
+                                    <DatumFeld LabelKey="AUSSCHREIBUNG_OFFERTENFRIST" @bind-Datum="Ausschreibung!.OffertenFrist" />
+                                </div>
+                                break;
+
+                            case nameof(EnumVerfahrensart.Freihändig):
+                            case nameof(EnumVerfahrensart.RFI):
+                            case nameof(EnumVerfahrensart.VorankündigungOffen):
+                            case nameof(EnumVerfahrensart.VorankündigungSelektiv):
+                            case nameof(EnumVerfahrensart.VorankündigungUnbekannt):
+                                <div class="datum-raster spalten-3">
+                                    <DatumFeld LabelKey="AUSSCHREIBUNG_EINGEREICHT" @bind-Datum="Ausschreibung!.Eingereicht" />
+                                    <DatumFeld LabelKey="AUSSCHREIBUNG_PUBLIKATION" @bind-Datum="Ausschreibung!.Publikation" />
+                                    <VerzoegerungFeld @bind-Wert="Ausschreibung!.VerzoegerungDurchAuftraggeber" />
+                                    <AnzahlTageFeld Eingereicht="@Ausschreibung!.Eingereicht" Publikation="@Ausschreibung!.Publikation" Frist="@_fristPublikation"
+                                                    MeldungEingereicht="() => Ausschreibung!.Eingereicht" MeldungPublikation="() => Ausschreibung!.Publikation" />
+                                </div>
+                                break;
+
+                            default: // Offen und Einladung
+                                <div class="datum-raster spalten-4">
+                                    <DatumFeld LabelKey="AUSSCHREIBUNG_EINGEREICHT" @bind-Datum="Ausschreibung!.Eingereicht" />
+                                    <DatumFeld LabelKey="AUSSCHREIBUNG_PUBLIKATION" @bind-Datum="Ausschreibung!.Publikation" />
+                                    <VerzoegerungFeld @bind-Wert="Ausschreibung!.VerzoegerungDurchAuftraggeber" />
+                                    <DatumFeld LabelKey="AUSSCHREIBUNG_EINGABEFRIST" @bind-Datum="Ausschreibung!.OffertenFrist" />
+                                    <AnzahlTageFeld Eingereicht="@Ausschreibung!.Eingereicht" Publikation="@Ausschreibung!.Publikation" Frist="@_fristPublikation"
+                                                    MeldungEingereicht="() => Ausschreibung!.Eingereicht" MeldungPublikation="() => Ausschreibung!.Publikation" />
+                                </div>
+                                break;
+                        }
+                    </div>
+
+                    <AusschreibungSprachenMatrix Ausschreibung="@(Ausschreibung!)"
+                                                 Sprachen="@(Sprachen!)"
+                                                 Dokumentarten="@(Dokumentarten!)"
+                                                 OnGeaendert="StateHasChanged" />
+                </div>
+                }
+            </fieldset>
+            }
+
+            @* Widerruf einer RFI oder Vorankündigung (sie haben keine Lose); bei anderen Verfahrensarten nur sichtbar, solange
+               noch Daten vorhanden sind (löschen, aber keine neuen erfassen). Zugeklappt, solange nichts erfasst ist. *@
+            @if (VerfahrensartRegeln.DarfWiderrufErfassen(Ausschreibung!.Verfahrensart.NaturalId) || HatWiderruf(Ausschreibung))
+            {
+                <fieldset class="form-fieldset @(_widerrufExpanded ? null : "fieldset-zugeklappt") mb-3">
+                    <legend class="fieldset-legend legend-klappbar" @onclick="() => _widerrufExpanded = !_widerrufExpanded">
+                        <i class="bi @(_widerrufExpanded ? "bi-chevron-down" : "bi-chevron-right") me-1"></i>@TranslationHelper.Translate("AUSSCHREIBUNG_WIDERRUF")
+                    </legend>
+                    @if (_widerrufExpanded)
+                    {
+                        <div class="datum-raster spalten-3">
+                            <DatumFeld LabelKey="AUSSCHREIBUNG_EINGEREICHT" @bind-Datum="Ausschreibung!.EingereichtWiderruf" />
+                            <DatumFeld LabelKey="AUSSCHREIBUNG_PUBLIKATION" @bind-Datum="Ausschreibung!.PublikationWiderruf" />
+                            <VerzoegerungFeld @bind-Wert="Ausschreibung!.VerzoegerungDurchAuftraggeberWiderruf" />
+                            <AnzahlTageFeld Eingereicht="@Ausschreibung!.EingereichtWiderruf" Publikation="@Ausschreibung!.PublikationWiderruf" Frist="@_fristPublikation"
+                                            MeldungEingereicht="() => Ausschreibung!.EingereichtWiderruf" MeldungPublikation="() => Ausschreibung!.PublikationWiderruf" />
+                        </div>
+                    }
+                </fieldset>
+            }
+
+            @* Bei Freihändig nur sichtbar, solange noch Berichtigungen vorhanden sind (löschen, aber keine neuen erfassen). *@
+            @if (VerfahrensartRegeln.DarfBerichtigungErfassen(Ausschreibung!.Verfahrensart.NaturalId) || Ausschreibung.Berichtigungen.Any())
+            {
+                <AusschreibungBerichtigungen Ausschreibung="@(Ausschreibung!)" FristPublikation="@_fristPublikation" OnGeaendert="StateHasChanged" />
+            }
+
+            @* Bemerkungen: aufklappbar; zugeklappt, solange keine Bemerkung erfasst ist *@
+            <fieldset class="form-fieldset-bemerkung mb-3" id="textarea_bemerkung">
+                <legend class="fieldset-legend legend-klappbar" @onclick="() => _bemerkungExpanded = !_bemerkungExpanded">
+                    <i class="bi @(_bemerkungExpanded ? "bi-chevron-down" : "bi-chevron-right") me-1"></i>@TranslationHelper.Translate("AUSSCHREIBUNG_BEMERKUNGEN")
+                </legend>
+                @if (_bemerkungExpanded)
+                {
+                    <MudTextField T="string" @bind-Value="Ausschreibung.Bemerkung" Lines="8" />
+                }
+            </fieldset>
+        </div>
+        <ItreeButtonGroup Position="EnumButtonGroupPosition.Rechts" CustomClass="buttongroup-vollbreit">
+            @if (Ausschreibung!.Id != Guid.Empty && VerfahrensartRegeln.IstVorankuendigung(Ausschreibung!.Verfahrensart.NaturalId))
+            {
+                @* Nur bei gespeicherten Änderungen erlaubt, damit die Folgeausschreibung vom aktuellen Stand ausgeht
+                   (und die Navigation nicht am Dirty-Guard hängen bleibt). *@
+                <ItreeButton Type="EnumButton.Neu" ButtonTextKey="AUSSCHREIBUNG_FOLGEAUSSCHREIBUNG_ERSTELLEN"
+                             OnClick="ErstelleFolgeausschreibung" SpinnerIsLoading="@_buttonFolgeausschreibungIsLoading"
+                             Enabled="@(!HasChanges() && !_buttonFolgeausschreibungIsLoading)" />
+            }
+            @if (Ausschreibung!.Id != Guid.Empty)
+            {
+                @* Publizierte Ausschreibungen (Publikationsdatum gesetzt) dürfen nicht gelöscht werden;
+                   der Service prüft dies zusätzlich serverseitig. *@
+                <ItreeButton Type="EnumButton.Loeschen" OnClick="DeleteAusschreibung" SpinnerIsLoading="@_buttonLoeschenIsLoading"
+                             Enabled="@(Ausschreibung!.Publikation == null && !_buttonLoeschenIsLoading)"
+                             ShowTooltip="@(Ausschreibung!.Publikation != null)"
+                             TooltipText="@TranslationHelper.Translate("AUSSCHREIBUNG_LOESCHEN_PUBLIZIERT_TOOLTIP")"
+                             Class="btn-loeschen" />
+            }
+            <ItreeButton Type="EnumButton.Speichern" ButtonType="ButtonType.Submit" Enabled="@(HasChanges() && !_buttonSpeichernIsLoading)" SpinnerIsLoading="@_buttonSpeichernIsLoading" />
+        </ItreeButtonGroup>
+    </EditForm>
+
+}
+
+<ConfirmDialog IsVisible="@_showVerfahrensartConfirm"
+               CheckHandler="@VerfahrensartConfirm"
+               Type="EnumConfirmType.Cancel"
+               TranslationKey="AUSSCHREIBUNG_VERFAHRENSART_AENDERN_CONFIRM"
+               TitleTranslationKey="AUSSCHREIBUNG_VERFAHRENSART_AENDERN_TITEL" />
+
+@code {
+    /// <summary>Id der Ausschreibung aus der Route (die Daten kommen über den CascadingParameter).</summary>
+    [Parameter]
+    public Guid AusId { get; set; }
+
+    /// <summary>Vom Layout geteilte Ausschreibung — wird hier direkt bearbeitet.</summary>
+    [CascadingParameter]
+    public Ausschreibung? Ausschreibung { get; set; }
+
+    /// <summary>Meldet dem Layout die gespeicherte Ausschreibung (Kopfzeile und Tabs auffrischen).</summary>
+    [CascadingParameter]
+    public Action<Ausschreibung>? RefreshAusschreibung { get; set; }
+
+    // Bei Projektart "Bau" wird fix die Rolle "Logistik zentral" verwendet.
+    private const string RolleLogistikZentralNaturalId = "LogistikZentral";
+
+    // Bei Projektart "Bau" wird das Amt mit dem BBL vorbelegt (Kurzbezeichnung des Amts).
+    private const string AmtBblKurzbezeichnung = "BBL";
+
+    // Ausschreibung/Publikation: aufklappbar, standardmässig immer offen.
+    private bool _ausschreibungBereichExpanded = true;
+
+    private bool _bemerkungExpanded;
+    private bool _buttonFolgeausschreibungIsLoading;
+    private bool _buttonLoeschenIsLoading;
+    private bool _buttonSpeichernIsLoading;
+    private bool _isLoading = true;
+    private bool _widerrufExpanded;
+    private bool _showVerfahrensartConfirm;
+
+    private Guid _initializedFor;
+    private Guid? _pendingVeaId;
+
+    // Frist aus der Konfiguration, ab der «Anzahl Tage» rot erscheint (null, wenn nicht konfiguriert).
+    private int? _fristPublikation;
+
+    // Erzwingt ein Neuerstellen des Verfahrensart-MudSelect, siehe VerfahrensartConfirm.
+    private int _verfahrensartSelectKey;
+
+    private AusschreibungValidator? _validator;
+
+    private Ausschreibung? _ausschreibungOrig;
+
+    // Zugewiesene, aber inaktive Sachbearbeiter — nur zur Anzeige nachgeladen
+    // (GetAllWithOrganisationszugehoerigkeit liefert nur aktive).
+    private readonly List<Sachbearbeiter> _inaktiveSachbearbeiter = new();
+
+    // Zugewiesenes, aber inaktives Amt bzw. Ressort — nur zur Anzeige nachgeladen (GetAll liefert nur aktive).
+    private Amt? _inaktivesAmt;
+    private Ressort? _inaktivesRessort;
+
+    private List<Sachbearbeiter> SachbearbeiterBbl { get; } = new();
+    private List<Sachbearbeiter> SachbearbeiterDoea { get; } = new();
+    private List<Sachbearbeiter> SachbearbeiterRd { get; } = new();
+    private List<Amt>? Aemter { get; set; } = new();
+    private List<Dokumentart>? Dokumentarten { get; set; } = new();
+    private List<Leistungsart>? Leistungsarten { get; set; } = new();
+    private List<Projektart>? Projektarten { get; set; } = new();
+    private List<Ressort>? Ressorts { get; set; } = new();
+    private List<RolleInAusschreibung>? RollenInAusschreibung { get; set; } = new();
+    private List<Sprache>? Sprachen { get; set; } = new();
+    private List<Verfahrensart>? Verfahrensarten { get; set; } = new();
+
+    private bool IstProjektartBau => Ausschreibung?.Projektart.NaturalId == EnumProjektart.Bau.ToString();
+
+    private static bool HatWiderruf(Ausschreibung aus) =>
+        aus.EingereichtWiderruf != null || aus.PublikationWiderruf != null || aus.VerzoegerungDurchAuftraggeberWiderruf;
+
+    // Eine Neuanlage gilt gegenüber der leeren Ausschreibung als geändert: Eine vorbefüllte Folgeausschreibung lässt sich so
+    // speichern, und beim Verlassen fragt der Guard nach, wie bei einer manuell begonnenen Neuanlage.
+    private static Ausschreibung Ausgangsstand(Ausschreibung aus) =>
+        aus.Id == Guid.Empty ? new Ausschreibung { Aktiv = true } : aus.Clone()!;
+
+    // Die aktuell zugewiesene Person immer einschliessen – auch wenn sie inaktiv ist –,
+    // damit MudSelect den Namen statt der GUID anzeigt (analog LeistungsartenGefiltert).
+    // Nach einem Wechsel auf eine andere Person verschwindet der inaktive Eintrag aus der Auswahl.
+    private IEnumerable<Sachbearbeiter> SachbearbeiterBblAuswahl => MitZugewiesenem(SachbearbeiterBbl, Ausschreibung?.SacBblId);
+    private IEnumerable<Sachbearbeiter> SachbearbeiterDoeaAuswahl => MitZugewiesenem(SachbearbeiterDoea, Ausschreibung?.SacDoeAId);
+    private IEnumerable<Sachbearbeiter> SachbearbeiterRdAuswahl => MitZugewiesenem(SachbearbeiterRd, Ausschreibung?.SacRdId);
+
+    /// <summary>Ämter zur Auswahl: die aktiven plus allenfalls das zugewiesene inaktive Amt.</summary>
+    private IEnumerable<Amt> AemterAuswahl
+    {
+        get
+        {
+            if (Ausschreibung?.AmtId is { } amtId && amtId != Guid.Empty &&
+                Aemter!.All(a => a.Id != amtId) && _inaktivesAmt?.Id == amtId)
+            {
+                return Aemter!.Append(_inaktivesAmt).Alphabetisch(a => a.Bezeichnung);
+            }
+
+            return Aemter!;
+        }
+    }
+
+    /// <summary>Nur die Ressorts des aktuell gewählten Amts stehen zur Auswahl.</summary>
+    private IEnumerable<Ressort> RessortsGefiltert
+    {
+        get
+        {
+            if (Ausschreibung is null)
+            {
+                return Enumerable.Empty<Ressort>();
+            }
+
+            var gefiltert = Ausschreibung.AmtId is { } amtId && amtId != Guid.Empty
+                ? Ressorts!.Where(r => r.AmtId == amtId).ToList()
+                : new List<Ressort>();
+
+            // Das aktuell gespeicherte Ressort immer einschliessen – auch wenn es zu einem
+            // anderen Amt gehört oder inaktiv ist –, damit MudSelect die Bezeichnung statt der GUID anzeigt.
+            var gewaehlt = Ressorts!.FirstOrDefault(r => r.Id == Ausschreibung.ResId)
+                ?? (_inaktivesRessort?.Id == Ausschreibung.ResId ? _inaktivesRessort : null);
+            if (gewaehlt != null && gefiltert.All(r => r.Id != gewaehlt.Id))
+            {
+                return gefiltert.Append(gewaehlt).Alphabetisch(r => r.Bezeichnung);
+            }
+
+            return gefiltert;
+        }
+    }
+
+    /// <summary>Nur die Leistungsarten der aktuell gewählten Projektart stehen zur Auswahl.</summary>
+    private IEnumerable<Leistungsart> LeistungsartenGefiltert
+    {
+        get
+        {
+            if (Ausschreibung is null)
+            {
+                return Enumerable.Empty<Leistungsart>();
+            }
+
+            var gefiltert = Ausschreibung.PraId != Guid.Empty
+                ? Leistungsarten!.Where(l => l.PraId == Ausschreibung.PraId).ToList()
+                : new List<Leistungsart>();
+
+            // Die aktuell gespeicherte Leistungsart immer einschliessen – auch wenn sie zu einer
+            // anderen Projektart gehört –, damit MudSelect die Bezeichnung statt der GUID anzeigt.
+            var gewaehlt = Leistungsarten!.FirstOrDefault(l => l.Id == Ausschreibung.LeaId);
+            if (gewaehlt != null && gefiltert.All(l => l.Id != gewaehlt.Id))
+            {
+                return gefiltert.Append(gewaehlt).Alphabetisch(l => l.Bezeichnung);
+            }
+
+            return gefiltert;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _validator = new AusschreibungValidator(true);
+
+        // Auswahllisten alphabetisch nach angezeigtem Text (die Verfahrensarten liefert GetAll nach Sortierungs-Nr.);
+        // die gefilterten Auswahlen übernehmen diese Reihenfolge.
+        Aemter = (await AmtService.GetAll()).Alphabetisch(a => a.Bezeichnung);
+        Ressorts = (await RessortsService.GetAll()).Alphabetisch(r => r.Bezeichnung);
+        Leistungsarten = (await LeistungsartService.GetAll()).Alphabetisch(l => l.Bezeichnung);
+        RollenInAusschreibung = (await RolleInAusschreibungService.GetAll()).Alphabetisch(r => r.Bezeichnung);
+        Dokumentarten = await DokumentartService.GetAll();
+        Sprachen = await SpracheService.GetAll();
+        Projektarten = (await ProjektartService.GetAll()).Alphabetisch(p => p.Bezeichnung);
+        Verfahrensarten = (await VerfahrensartService.GetAll()).Alphabetisch(v => v.Bezeichnung);
+        _fristPublikation = (await KonfigurationService.GetAll())?
+            .FirstOrDefault(k => k.NaturalId == GeneralConstants.KonfigurationFristPublikation)?.WertInt;
+
+        var sachbearbeiter = (await SachbearbeiterService.GetAllWithOrganisationszugehoerigkeit()).Alphabetisch(s => s.Fullname);
+        SachbearbeiterBbl.AddRange(sachbearbeiter.Where(s => s.Organisationszugehoerigkeit?.NaturalId == EnumOrganisationszugehoerigkeit.BBL.ToString()));
+        SachbearbeiterDoea.AddRange(sachbearbeiter.Where(s => s.Organisationszugehoerigkeit?.NaturalId == EnumOrganisationszugehoerigkeit.DoeA.ToString()));
+        SachbearbeiterRd.AddRange(sachbearbeiter.Where(s => s.Organisationszugehoerigkeit?.NaturalId == EnumOrganisationszugehoerigkeit.RD.ToString()));
+
+        await LadeInaktiveSachbearbeiter();
+        await LadeInaktivesAmt();
+        await LadeInaktivesRessort();
+
+        _ausschreibungOrig = Ausgangsstand(Ausschreibung!);
+        _bemerkungExpanded = !string.IsNullOrWhiteSpace(Ausschreibung?.Bemerkung);
+        _widerrufExpanded = HatWiderruf(Ausschreibung!);
+        EditState.Register(HasChanges);
+        _initializedFor = Ausschreibung?.Id ?? Guid.Empty;
+        _isLoading = false;
+    }
+
+    // Wechselt der vom Layout kaskadierte Wert auf eine ANDERE Ausschreibung (Navigation per Verweis-Link),
+    // läuft OnInitializedAsync nicht erneut -> die ausschreibungsabhängigen Zustände hier neu aufbauen.
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_isLoading || Ausschreibung == null || Ausschreibung.Id == _initializedFor)
+        {
+            return;
+        }
+
+        _initializedFor = Ausschreibung.Id;
+        _ausschreibungOrig = Ausgangsstand(Ausschreibung);
+        _bemerkungExpanded = !string.IsNullOrWhiteSpace(Ausschreibung.Bemerkung);
+        _widerrufExpanded = HatWiderruf(Ausschreibung);
+
+        await LadeInaktiveSachbearbeiter();
+        await LadeInaktivesAmt();
+        await LadeInaktivesRessort();
+    }
+
+    /// <summary>Ergänzt eine zugewiesene, aber inaktive Person, damit MudSelect ihren Namen anzeigt.</summary>
+    private IEnumerable<Sachbearbeiter> MitZugewiesenem(List<Sachbearbeiter> liste, Guid? sacId)
+    {
+        if (sacId is { } id && id != Guid.Empty && liste.All(s => s.Id != id))
+        {
+            var inaktiv = _inaktiveSachbearbeiter.FirstOrDefault(s => s.Id == id);
+            if (inaktiv != null)
+            {
+                return liste.Append(inaktiv).Alphabetisch(s => s.Fullname);
+            }
+        }
+
+        return liste;
+    }
+
+    /// <summary>Lädt zugewiesene Personen nach, die in den (aktiven) Auswahllisten fehlen.</summary>
+    private async Task LadeInaktiveSachbearbeiter()
+    {
+        if (Ausschreibung == null)
+        {
+            return;
+        }
+
+        foreach (var (liste, sacId) in new[]
+                 {
+                     (SachbearbeiterDoea, Ausschreibung.SacDoeAId),
+                     (SachbearbeiterRd, Ausschreibung.SacRdId),
+                     (SachbearbeiterBbl, Ausschreibung.SacBblId)
+                 })
+        {
+            if (sacId is not { } id || id == Guid.Empty)
+            {
+                continue;
+            }
+
+            if (liste.Any(s => s.Id == id) || _inaktiveSachbearbeiter.Any(s => s.Id == id))
+            {
+                continue;
+            }
+
+            _inaktiveSachbearbeiter.Add(await SachbearbeiterService.GetById(id));
+        }
+    }
+
+    /// <summary>Lädt ein zugewiesenes Amt nach, das in der (aktiven) Auswahlliste fehlt.</summary>
+    private async Task LadeInaktivesAmt()
+    {
+        if (Ausschreibung?.AmtId is not { } amtId || amtId == Guid.Empty)
+        {
+            return;
+        }
+
+        if (Aemter!.Any(a => a.Id == amtId) || _inaktivesAmt?.Id == amtId)
+        {
+            return;
+        }
+
+        _inaktivesAmt = await AmtService.GetById(amtId);
+    }
+
+    /// <summary>Lädt ein zugewiesenes Ressort nach, das in der (aktiven) Auswahlliste fehlt.</summary>
+    private async Task LadeInaktivesRessort()
+    {
+        if (Ausschreibung?.ResId is not { } resId || resId == Guid.Empty)
+        {
+            return;
+        }
+
+        if (Ressorts!.Any(r => r.Id == resId) || _inaktivesRessort?.Id == resId)
+        {
+            return;
+        }
+
+        _inaktivesRessort = await RessortsService.GetById(resId);
+    }
+
+    private async Task Save()
+    {
+        _buttonSpeichernIsLoading = true;
+
+        // Fehler (z.B. Validierung, Nummern- oder Concurrency-Konflikt) im Fehlerfenster anzeigen
+        // statt den Circuit zu beenden; der Ausgangszustand wird nur bei Erfolg übernommen.
+        var istNeu = Ausschreibung!.Id == Guid.Empty;
+        var erfolgreich = false;
+        await ErrorHandler.HandleAsync(async () =>
+        {
+            await AusschreibungService.Save(Ausschreibung!);
+            erfolgreich = true;
+            return new ServiceResult<Ausschreibung>();
+        });
+
+        if (erfolgreich)
+        {
+            SucheState.ErgebnisVeraltet = true;
+            _ausschreibungOrig = Ausschreibung!.Clone();
+            RefreshAusschreibung?.Invoke(Ausschreibung!);
+        }
+        else if (istNeu)
+        {
+            // Die Validierung stempelt vor dem Insert bereits eine Id auf das Modell — zurücksetzen,
+            // damit der nächste Speicherversuch wieder als Neuanlage läuft.
+            Ausschreibung!.Id = Guid.Empty;
+        }
+
+        _buttonSpeichernIsLoading = false;
+    }
+
+    /// <summary>
+    /// Löscht die Ausschreibung samt abhängiger Daten nach Bestätigung und kehrt zur Suche zurück.
+    /// Schlägt das Löschen fehl (z.B. zugewiesene Unterprojekte), zeigt der ErrorHandler eine Meldung.
+    /// </summary>
+    private async Task DeleteAusschreibung()
+    {
+        if (Ausschreibung is null || Ausschreibung.Id == Guid.Empty)
+        {
+            return;
+        }
+
+        var id = Ausschreibung.Id;
+
+        ConfirmService.ShowDeleteConfirm(async bestaetigt =>
+        {
+            if (bestaetigt)
+            {
+                _buttonLoeschenIsLoading = true;
+                await InvokeAsync(StateHasChanged);
+
+                var geloescht = await ErrorHandler.HandleAsync(async () =>
+                    new ServiceResult<Ausschreibung> { Item = await AusschreibungService.Delete(id) });
+
+                _buttonLoeschenIsLoading = false;
+
+                // Bei Erfolg liefert Delete die gelöschte Ausschreibung zurück (Id gesetzt).
+                if (geloescht.Id == id)
+                {
+                    SucheState.ErgebnisVeraltet = true;
+                    NavigationService.NavigateTo("/");
+                    return;
+                }
+            }
+
+            await InvokeAsync(StateHasChanged);
+        });
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Öffnet zur Vorankündigung die Folgeausschreibung (gleiche Nummer, direkt verknüpft, Verfahrensart aus der Variante
+    /// abgeleitet) als vorbefüllte Neuanlage. Wie bei der manuellen Neuanlage wird erst beim Speichern etwas angelegt.
+    /// </summary>
+    private async Task ErstelleFolgeausschreibung()
+    {
+        if (Ausschreibung is null || Ausschreibung.Id == Guid.Empty)
+        {
+            return;
+        }
+
+        _buttonFolgeausschreibungIsLoading = true;
+
+        var folge = await ErrorHandler.HandleAsync(async () =>
+            new ServiceResult<Ausschreibung> { Item = await AusschreibungService.BereiteFolgeausschreibungVor(Ausschreibung.Id) });
+
+        _buttonFolgeausschreibungIsLoading = false;
+
+        // Ohne Fehler ist die Vorlage gefüllt (Verweis auf die Vorankündigung gesetzt).
+        if (folge.Vorankuendigung != null)
+        {
+            VorlageState.Setzen(folge);
+            NavigationService.NavigateTo($"/ausschreibung/{Guid.Empty}");
+        }
+    }
+
+    /// <summary>Pendente Änderungen gegenüber dem zuletzt geladenen/gespeicherten Stand.</summary>
+    private bool HasChanges()
+    {
+        if (Ausschreibung == null || _ausschreibungOrig == null)
+        {
+            return false;
+        }
+
+        if (!Ausschreibung.IsEqual(_ausschreibungOrig, "AusschreibungSprache,CpvNummern,Hauptprojekt,Vorankuendigung,Rfi,ReferenziertVon,Berichtigungen"))
+        {
+            return true;
+        }
+
+        // Verweis-Objekte sind Referenztypen und werden von IsEqual nicht zuverlässig verglichen -> explizit über die Id.
+        if (Ausschreibung.Hauptprojekt?.Id != _ausschreibungOrig.Hauptprojekt?.Id ||
+            Ausschreibung.Vorankuendigung?.Id != _ausschreibungOrig.Vorankuendigung?.Id ||
+            Ausschreibung.Rfi?.Id != _ausschreibungOrig.Rfi?.Id)
+        {
+            return true;
+        }
+
+        // Sprach- und CPV-Zuordnungen als Mengen vergleichen (Reihenfolge ist unerheblich).
+        if (MengeGeaendert(
+                Ausschreibung.AusschreibungSprache.Select(x => (x.DoaId, x.SprId)),
+                _ausschreibungOrig.AusschreibungSprache.Select(x => (x.DoaId, x.SprId))))
+        {
+            return true;
+        }
+
+        if (MengeGeaendert(
+                Ausschreibung.CpvNummern.Select(x => x.CpvId),
+                _ausschreibungOrig.CpvNummern.Select(x => x.CpvId)))
+        {
+            return true;
+        }
+
+        // Berichtigungen: neue Einträge (Id leer) zählen immer als Änderung, bestehende feldweise vergleichen.
+        if (Ausschreibung.Berichtigungen.Count != _ausschreibungOrig.Berichtigungen.Count)
+        {
+            return true;
+        }
+
+        foreach (var berichtigung in Ausschreibung.Berichtigungen)
+        {
+            var orig = berichtigung.Id == Guid.Empty
+                ? null
+                : _ausschreibungOrig.Berichtigungen.FirstOrDefault(b => b.Id == berichtigung.Id);
+
+            if (orig == null
+                || orig.Eingereicht != berichtigung.Eingereicht
+                || orig.Publiziert != berichtigung.Publiziert
+                || orig.VerzoegerungDurchAuftraggeber != berichtigung.VerzoegerungDurchAuftraggeber
+                || (orig.Bemerkungen ?? string.Empty) != (berichtigung.Bemerkungen ?? string.Empty))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool MengeGeaendert<T>(IEnumerable<T> aktuell, IEnumerable<T> original) =>
+        !aktuell.ToHashSet().SetEquals(original);
+
+    private void ProjektartChanged(Guid? praId)
+    {
+        if (praId is null)
+        {
+            return;
+        }
+
+        Ausschreibung!.Projektart = Projektarten!.Single(v => v.Id == praId.Value);
+        Ausschreibung.PraId = praId.Value;
+
+        // Leistungsart zurücksetzen, falls sie nicht zur neuen Projektart gehört
+        if (!Leistungsarten!.Any(l => l.Id == Ausschreibung.LeaId && l.PraId == praId.Value))
+        {
+            Ausschreibung.LeaId = null;
+        }
+
+        // Nur "Bau" kennt Hauptprojekte (Picker ist sonst ausgeblendet) — ein zuvor gewähltes
+        // bliebe sonst unsichtbar im Modell und ginge beim Speichern kommentarlos verloren.
+        if (!IstProjektartBau)
+        {
+            Ausschreibung.Hauptprojekt = null;
+        }
+
+        SetDefaultsFuerProjektart();
+        StateHasChanged();
+    }
+
+    /// <summary>Bei Projektart "Bau" Rolle «Logistik zentral» und Amt BBL vorbelegen; beide bleiben änderbar (selten «Ämter dezentral»).</summary>
+    private void SetDefaultsFuerProjektart()
+    {
+        if (!IstProjektartBau)
+        {
+            return;
+        }
+
+        var logistikZentral = RollenInAusschreibung!.FirstOrDefault(r => r.NaturalId == RolleLogistikZentralNaturalId);
+        if (logistikZentral != null)
+        {
+            Ausschreibung!.RiaId = logistikZentral.Id;
+        }
+
+        var amtBbl = Aemter!.FirstOrDefault(a => a.Kurzbezeichnung == AmtBblKurzbezeichnung);
+        if (amtBbl != null)
+        {
+            AmtChanged(amtBbl.Id);
+        }
+    }
+
+    private void AmtChanged(Guid? amtId)
+    {
+        Ausschreibung!.AmtId = amtId;
+
+        // Ressort zurücksetzen, falls es nicht zum neuen Amt gehört
+        if (!Ressorts!.Any(r => r.Id == Ausschreibung.ResId && r.AmtId == amtId))
+        {
+            Ausschreibung.ResId = null;
+        }
+    }
+
+    private void VerfahrensartChanged(Guid? veaId)
+    {
+        if (veaId is null)
+        {
+            return;
+        }
+
+        // Bei einer bestehenden Ausschreibung vor dem tatsächlichen Wechsel einen Hinweis
+        // anzeigen, damit nicht versehentlich eine andere Verfahrensart gewählt wird.
+        if (Ausschreibung!.Id != Guid.Empty && veaId.Value != Ausschreibung.VeaId)
+        {
+            _pendingVeaId = veaId.Value;
+            _showVerfahrensartConfirm = true;
+            StateHasChanged();
+            return;
+        }
+
+        ApplyVerfahrensart(veaId.Value);
+    }
+
+    private async Task VerfahrensartConfirm(bool bestaetigt)
+    {
+        _showVerfahrensartConfirm = false;
+
+        if (bestaetigt && _pendingVeaId is not null)
+        {
+            ApplyVerfahrensart(_pendingVeaId.Value);
+        }
+        else
+        {
+            // Bei Abbruch keine Änderung übernehmen. Der geänderte @key erzwingt ein
+            // Neuerstellen des MudSelect, damit die Anzeige auf die gespeicherte
+            // Verfahrensart zurückspringt (StateHasChanged allein genügt dafür nicht).
+            _verfahrensartSelectKey++;
+        }
+
+        _pendingVeaId = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void ApplyVerfahrensart(Guid veaId)
+    {
+        Ausschreibung!.Verfahrensart = Verfahrensarten!.Single(v => v.Id == veaId);
+        Ausschreibung.VeaId = veaId;
+
+        // Verweise bereinigen, die für die neue Verfahrensart nicht (mehr) erlaubt sind.
+        var naturalId = Ausschreibung.Verfahrensart.NaturalId;
+        if (!VerfahrensartRegeln.DarfVorankuendigungReferenzieren(naturalId))
+        {
+            Ausschreibung.Vorankuendigung = null;
+        }
+
+        if (!VerfahrensartRegeln.DarfRfiReferenzieren(naturalId))
+        {
+            Ausschreibung.Rfi = null;
+        }
+
+        SetDefaultSprachen();
+        StateHasChanged();
+    }
+
+    /// <summary>Belegt bei neuen Ausschreibungen die Sprachen je Dokumentart abhängig von der Verfahrensart vor.</summary>
+    private void SetDefaultSprachen()
+    {
+        // Nur bei neuen (noch nicht gespeicherten) Ausschreibungen vorbelegen
+        if (Ausschreibung is null || Ausschreibung.Id != Guid.Empty)
+        {
+            return;
+        }
+
+        Ausschreibung.AusschreibungSprache.Clear();
+
+        foreach (var (doaNaturalId, sprachen) in VerfahrensartRegeln.StandardSprachen(Ausschreibung.Verfahrensart.NaturalId))
+        {
+            var dokumentart = Dokumentarten!.FirstOrDefault(d => d.NaturalId == doaNaturalId);
+            if (dokumentart is null)
+            {
+                continue;
+            }
+
+            foreach (var sprNaturalId in sprachen)
+            {
+                var sprache = Sprachen!.FirstOrDefault(s => s.NaturalId == sprNaturalId);
+                if (sprache is null)
+                {
+                    continue;
+                }
+
+                Ausschreibung.AusschreibungSprache.Add(new AusschreibungSprache
+                {
+                    Dokumentart = dokumentart.Bezeichnung,
+                    DoaId = dokumentart.Id,
+                    Sprache = sprache.Bezeichnung,
+                    SprId = sprache.Id,
+                    Wert = true
+                });
+            }
+        }
+    }
+
+    /// <summary>Navigiert zu einer (eingehend) referenzierenden Ausschreibung; der Dirty-Guard im Layout greift weiterhin.</summary>
+    private void NavigiereZuAusschreibung(Guid id)
+    {
+        if (id != Guid.Empty)
+        {
+            NavigationService.NavigateTo($"/ausschreibung/{id}");
+        }
+    }
+
+    /// <summary>
+    /// Übernimmt nach Auswahl einer Vorankündigung deren referenzierte RFI (sofern vorhanden).
+    /// Den Verweis selbst hat das Binding bereits gesetzt.
+    /// </summary>
+    private async Task OnVorankuendigungAusgewaehlt(Ausschreibung vorankuendigung)
+    {
+        if (vorankuendigung is null || vorankuendigung.Id == Guid.Empty)
+        {
+            return;
+        }
+
+        // Eine bereits manuell gesetzte RFI nicht stillschweigend überschreiben.
+        if (Ausschreibung!.Rfi is { } vorhanden && vorhanden.Id != Guid.Empty)
+        {
+            return;
+        }
+
+        var details = await AusschreibungService.Get(vorankuendigung.Id);
+        if (details?.Rfi is { } rfi && rfi.Id != Guid.Empty)
+        {
+            Ausschreibung.Rfi = new Ausschreibung { Id = rfi.Id, Bezeichnung = rfi.Bezeichnung };
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Übernimmt bei der Zuordnung eines Hauptprojekts dessen Ressort, Bezeichnung, Standort und
+    /// verantwortliche Person DöA – aber nur solange die Ausschreibung noch nie gespeichert wurde.
+    /// </summary>
+    private async Task OnHauptprojektAusgewaehlt(Ausschreibung hauptprojekt)
+    {
+        if (hauptprojekt is null || hauptprojekt.Id == Guid.Empty || Ausschreibung!.Id != Guid.Empty)
+        {
+            return;
+        }
+
+        var details = await AusschreibungService.Get(hauptprojekt.Id);
+        if (details is null)
+        {
+            return;
+        }
+
+        Ausschreibung.ResId = details.ResId;
+        Ausschreibung.Bezeichnung = details.Bezeichnung;
+        Ausschreibung.Standort = details.Standort;
+        Ausschreibung.SacDoeAId = details.SacDoeAId;
+
+        StateHasChanged();
+    }
+
+    /// <summary>Meldet die Änderungsprüfung dieses Tabs beim Navigations-Guard ab.</summary>
+    public void Dispose()
+    {
+        EditState.Unregister(HasChanges);
+    }
+}

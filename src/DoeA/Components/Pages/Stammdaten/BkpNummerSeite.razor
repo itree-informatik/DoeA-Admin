@@ -1,0 +1,92 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Data.Models.DTO.Stammdaten
+@using DoeA.Validator.Stammdaten
+@using DoeA.Interfaces.Stammdaten
+@inherits EditComponent<BkpNummer, IBkpNummerService>
+
+@if (DataList == null)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <ItreeGrid TItem="BkpNummer" Data="FilteredList" Pageable="true" PageSize="@PageSize" PageSizes="@PageSizeOptions"
+               Sortable="true" FilterMode="ItreeGridFilterMode.FilterMenu" OnRowClick="@OnRowClick">
+        <GridToolBarTemplate>
+            <ItreeSearchbox Id="searchbox" OnClick="@LoadData" Placeholder="@TranslationHelper.Translate("AUSWAEHLEN")" @bind-value="@SearchValue" @bind-onlyActive="NurAktive" />
+            <MudSpacer />
+            <ItreeButton Type="EnumButton.Neu" OnClick="@(() => SelectItem(new BkpNummer()))" />
+        </GridToolBarTemplate>
+        <GridColumns>
+            <ItreeGridColumn Field="NummerStr" Title="@TranslationHelper.Translate("STAMMDATEN_BKPNUMMER_NUMMERSTR")" />
+            <ItreeGridColumn Field="Bezeichnung" Title="@TranslationHelper.Translate("STAMMDATEN_BKPNUMMER_BEZEICHNUNG")" />
+            <ItreeGridColumn Field="Nummer" Title="@TranslationHelper.Translate("STAMMDATEN_BKPNUMMER_NUMMER")" />
+            <ItreeGridColumn Field="Aktiv" Title="@TranslationHelper.Translate("STAMMDATEN_BKPNUMMER_AKTIV")">
+                <Template>
+                    <JaNeinIcon Wert="context.Aktiv" />
+                </Template>
+            </ItreeGridColumn>
+            <ItreeGridColumn Sortable="false" Filterable="false">
+                <Template>
+                    @if (OnSelect.HasDelegate)
+                    {
+                        <div class="btn-group-grid">
+                            <ItreeButton Type="EnumButton.Hinzufuegen" OnClick="@(() => OnItemSelected(context))" ShowButtonText="false" />
+                        </div>
+                    }
+                </Template>
+            </ItreeGridColumn>
+        </GridColumns>
+    </ItreeGrid>
+
+    <ItreeFormWindow WindowVisible="@(SelectedItem != null)"
+                     WindowWidth="800px"
+                     Model="@SelectedItem"
+                     OnSave="@Save"
+                     Validator="@Validator"
+                     AutoGenerate="true"
+                     WithBaseProperties="true"
+                     IgnorePropertyList="@BasisfelderAusgeblendet"
+                     PrefixTranslationKey="STAMMDATEN_BKPNUMMER"
+                     OnClose="@Cancel"
+                     OnDelete="Delete"
+                     DeleteButtonShow="true" />
+}
+
+@code {
+    /// <summary>Ids, die in der Auswahl nicht mehr angeboten werden (bereits zugeordnete Nummern).</summary>
+    [Parameter]
+    public IEnumerable<Guid>? ExcludeIds { get; set; }
+
+    private IEnumerable<BkpNummer> FilteredList =>
+        ExcludeIds == null ? DataList! : DataList!.Where(d => !ExcludeIds.Contains(d.Id));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        Validator = new BkpNummerValidator(true);
+    }
+
+    /// <summary>Im Auswahlmodus (OnSelect gesetzt) öffnet der Zeilenklick kein Editierfenster.</summary>
+    private async Task OnRowClick(ItreeGridRowClickEventArgs args)
+    {
+        if (OnSelect.HasDelegate)
+        {
+            return;
+        }
+
+        await SelectItem(args);
+    }
+
+    private async Task OnItemSelected(BkpNummer item)
+    {
+        if (!OnSelect.HasDelegate)
+        {
+            throw new InvalidOperationException("Missing 'OnSelect' Event");
+        }
+
+        await OnSelect.InvokeAsync(item);
+    }
+}

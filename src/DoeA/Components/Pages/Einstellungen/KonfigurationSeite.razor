@@ -1,0 +1,131 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@page "/einstellungen/config"
+@using DoeA.Data.Models.DTO.Einstellungen
+@using DoeA.Interfaces.Einstellungen
+@using DoeA.Validator.Einstellungen
+@inherits EditComponent<Konfiguration, IKonfigurationService>
+
+<ItreeSiteTitle TranslationKey="EINSTELLUNGEN_KONFIGURATION" />
+
+@if (DataList == null)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <div class="accordion-body">
+        <ItreeGrid TItem="Konfiguration" Data="DataList.OrderBy(c => c.Bezeichnung)"
+                   Sortable="true" FilterMode="ItreeGridFilterMode.FilterMenu">
+            <GridColumns>
+                <ItreeGridColumn Field="Bezeichnung" Title="@TranslationHelper.Translate("EINSTELLUNGEN_KONFIGURATION_BEZEICHNUNG")" />
+                <ItreeGridColumn Field="Wert" Title="@TranslationHelper.Translate("EINSTELLUNGEN_KONFIGURATION_WERT")">
+                    <Template>
+                        @if (context.WertIsBool)
+                        {
+                            if (context.Wert == "Ja")
+                            {
+                                <ItreeTranslation Key="EINSTELLUNGEN_KONFIGURATION_JA"/>
+                            }
+                            else
+                            {
+                                <ItreeTranslation Key="EINSTELLUNGEN_KONFIGURATION_NEIN"/>
+                            }
+                        }
+                        else
+                        {
+                            @context.Wert
+                        }
+                    </Template>
+                </ItreeGridColumn>
+                <ItreeGridColumn Field="Beschreibung" Title="@TranslationHelper.Translate("EINSTELLUNGEN_KONFIGURATION_BESCHREIBUNG")" />
+                <ItreeGridColumn Sortable="false" Filterable="false">
+                    <Template>
+                        <ItreeButton Type="EnumButton.Editieren" OnClick="@(() => SelectItem(context))" ShowButtonText="false"/>
+                    </Template>
+                </ItreeGridColumn>
+            </GridColumns>
+        </ItreeGrid>
+    </div>
+}
+<ItreeFormWindow WindowVisible="@(SelectedItem != null)"
+                 WindowWidth="600px"
+                 Model="@SelectedItem"
+                 OnSave="@Save"
+                 Validator="@Validator"
+                 AutoGenerate="true"
+                 PrefixTranslationKey="EINSTELLUNGEN_KONFIGURATION"
+                 OnClose="@Cancel"
+                 IgnorePropertyList="@FormularAusgeblendet">
+
+    <ItreeFormData LabelTextKey="EINSTELLUNGEN_KONFIGURATION_WERT" LabelFieldId="textbox_value" Show="true" >
+        @* For ist nötig, damit der EditContext die Änderung mitbekommt (NotifyFieldChanged) und der Speichern-Button aktiv wird. *@
+        @if (SelectedItem is { WertIsInt: true })
+        {
+            <MudNumericField T="int" id="textbox_value" @bind-Value="SelectedItem.WertInt" For="() => SelectedItem.WertInt" />
+            <ValidationMessage For="() => SelectedItem.WertInt" />
+        }
+        else if (SelectedItem is { WertIsDecimal: true })
+        {
+            <MudNumericField T="decimal" id="textbox_value" @bind-Value="SelectedItem.WertDecimal" For="() => SelectedItem.WertDecimal" Format="N2" />
+            <ValidationMessage For="() => SelectedItem.WertDecimal" />
+        }
+        else if (SelectedItem is { WertIsBool: true })
+        {
+            <div class="itree-pt-5">
+                <MudCheckBox T="bool" @bind-Value="SelectedItem.WertBool" For="() => SelectedItem.WertBool" />
+                <ValidationMessage For="() => SelectedItem.WertBool" />
+            </div>
+        }
+        else if (SelectedItem is { WertIsDate: true })
+        {
+            <MudTextField T="string" Mask="@(new PatternMask("00.00"))" @bind-Value="SelectedItem.WertDate" For="() => SelectedItem.WertDate" id="textbox_value" />
+            <ValidationMessage For="() => SelectedItem.WertDate" />
+        }
+    </ItreeFormData>
+</ItreeFormWindow>
+
+@code {
+    // Nicht im autogenerierten Formular: Aktiv ist fachlich fix, der Typ steuert nur den Wert-Editor,
+    // und die Wert-Properties zeigt der eigene Editor. Bewusst nicht IgnoreProperties — die gilt auch
+    // für den Änderungsvergleich beim Update, der eine Änderung an Wert sonst nie erkennt.
+    private const string FormularAusgeblendet = "Aktiv,Typ,Wert,WertIsInt,WertIsBool,WertIsDate,WertIsDecimal,WertBool,WertInt,WertDate,WertDecimal";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        Validator = new KonfigurationValidator(true);
+    }
+
+    /// <summary>
+    /// Überträgt den typisierten Wert des jeweiligen Editors in die persistierte Textspalte
+    /// <c>Wert</c> und speichert anschliessend über die Basisimplementierung.
+    /// </summary>
+    private new async Task Save()
+    {
+        if (SelectedItem == null)
+        {
+            return;
+        }
+
+        if (SelectedItem.WertIsInt)
+        {
+            SelectedItem.Wert = SelectedItem.WertInt.FormatNumber();
+        }
+        else if (SelectedItem.WertIsDecimal)
+        {
+            SelectedItem.Wert = SelectedItem.WertDecimal.FormatNumber();
+        }
+        else if (SelectedItem.WertIsBool)
+        {
+            SelectedItem.Wert = SelectedItem.WertBool ? "Ja" : "Nein";
+        }
+        else if (SelectedItem.WertIsDate)
+        {
+            SelectedItem.Wert = SelectedItem.WertDate!;
+        }
+
+        await base.Save();
+    }
+}

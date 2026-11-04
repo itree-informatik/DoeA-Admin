@@ -1,0 +1,14 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@* Vollreload auf eine URL, damit die HTTP-Pipeline entscheidet (Cookie prüfen, Challenge zu eIAM, 403 auf /anmeldung);
+   eine Navigation innerhalb des Circuits würde die Authentifizierung nicht neu bewerten. *@
+@inject INavigationService Navigation
+
+@code {
+    /// <summary>Ziel-URL des Vollreloads.</summary>
+    [Parameter, EditorRequired]
+    public string Url { get; set; } = string.Empty;
+
+    protected override void OnInitialized() => Navigation.NavigateTo(Url, forceReload: true);
+}

@@ -1,0 +1,43 @@
+# IDE / Editor
+.vs/
+.idea/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build-Artefakte
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+publish/
+DbUpdater/pub/
+
+# Hilfsprojekte (werden in der CI mitkompiliert, gehören aber nicht ins Image)
+DataMigration/
+
+# NuGet
+*.nupkg
+**/packages/*
+
+# Laufzeitdaten
+**/FileStore/
+
+# Logs
+[Ll]og/
+*.log
+
+# Dokumentation
+*.md
+
+# OS / Temp
+**/.DS_Store
+*.tmp
+~$*
+*~
+
+# Launch-Settings (können Secrets enthalten)
+**/Properties/launchSettings.json

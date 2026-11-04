@@ -1,0 +1,29 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@page "/Error"
+@attribute [AllowAnonymous]
+@using System.Diagnostics
+
+<PageTitle>@TranslationHelper.Translate("FEHLERSEITE_TITEL")</PageTitle>
+
+<h1 class="h4 text-danger">@TranslationHelper.Translate("FEHLERSEITE_TITEL")</h1>
+<p>@TranslationHelper.Translate("FEHLERSEITE_TEXT")</p>
+
+@if (!string.IsNullOrEmpty(RequestId))
+{
+    <p><strong>@TranslationHelper.Translate("FEHLERSEITE_ANFRAGE_ID"):</strong> <code>@RequestId</code></p>
+}
+
+<a href="/">@TranslationHelper.Translate("FEHLERSEITE_ZUR_STARTSEITE")</a>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private string? RequestId { get; set; }
+
+    // Die Anfrage-ID erlaubt das Auffinden des Fehlers im Log, ohne Details an den Benutzer zu geben.
+    protected override void OnInitialized() =>
+        RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+}

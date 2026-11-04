@@ -1,0 +1,185 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@implements IAsyncDisposable
+
+@inject IAktuellerBenutzer AktuellerBenutzer
+@inject IJSRuntime JsRuntime
+
+@* Warnung vor dem Inaktivitätsablauf. Entscheidung und Abmeldung liegen in sitzung.js — der Browser ist die einzige
+   Autorität, nur er kennt den localStorage aller Tabs und das Cookie. Diese Komponente startet das Modul, zeigt Dialog
+   und Countdown und reicht «Sitzung verlängern» weiter; sie navigiert nie. Das Fenster hat bewusst kein OnClose (kein X):
+   ausgeblendet wird es nur über sitzung.js. Als zuletzt geöffnetes Fenster liegt es über allen anderen. *@
+@if (_warnungSichtbar)
+{
+    <ItreeWindow Visible="true">
+        <WindowTitle>
+            <strong><ItreeTranslation Key="SITZUNG_WARNUNG_TITEL" /></strong>
+        </WindowTitle>
+        <WindowContent>
+            <p><ItreeTranslation Key="SITZUNG_WARNUNG_TEXT" /></p>
+            <p><strong><ItreeTranslation Key="SITZUNG_ABLAUF_IN" Placeholders="@([Restzeit])" /></strong></p>
+        </WindowContent>
+        <WindowFooter>
+            <ItreeButton Id="button_sitzung_verlaengern" Type="EnumButton.Aktualisieren"
+                         ButtonTextKey="SITZUNG_VERLAENGERN" OnClick="Verlaengern" />
+        </WindowFooter>
+    </ItreeWindow>
+}
+
+@code {
+    /// <summary>Pfad des ES-Moduls; Anmeldung.razor importiert es ebenfalls, um den Abmeldegrund auszulesen.</summary>
+    public const string ModulPfad = "./js/sitzung.js";
+
+    private bool _warnungSichtbar;
+
+    private CancellationTokenSource? _countdown;
+
+    private DateTime _ablauf;
+
+    private DotNetObjectReference<SitzungsUeberwachung>? _eigeneReferenz;
+
+    private IJSObjectReference? _modul;
+
+    private string Restzeit => TimeSpan.FromTicks(Math.Max((_ablauf - DateTime.UtcNow).Ticks, 0)).ToString(@"mm\:ss");
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Ohne den Guard liefe die Überwachung auch auf /Error ([AllowAnonymous] im MainLayout): jeder Heartbeat
+        // gäbe 401 und lüde die Seite alle 5 Minuten neu.
+        if (!firstRender || !AktuellerBenutzer.IstAuthentisiert)
+        {
+            return;
+        }
+
+        _eigeneReferenz = DotNetObjectReference.Create(this);
+        try
+        {
+            _modul = await JsRuntime.InvokeAsync<IJSObjectReference>("import", ModulPfad);
+            await _modul.InvokeVoidAsync("start", _eigeneReferenz, new
+            {
+                inaktivitaetMs = AuthKonstanten.SitzungInaktivitaet.TotalMilliseconds,
+                warnungVorlaufMs = AuthKonstanten.SitzungWarnungVorlauf.TotalMilliseconds,
+                heartbeatIntervallMs = AuthKonstanten.HeartbeatIntervall.TotalMilliseconds,
+                pruefIntervallMs = AuthKonstanten.AktivitaetsPruefungIntervall.TotalMilliseconds,
+                heartbeatUrl = SitzungEndpoints.PfadHeartbeat,
+                abmeldungUrl = AnmeldungEndpoints.PfadAbmeldung,
+                abmeldegrund = AuthKonstanten.AbmeldegrundInaktivitaet
+            });
+        }
+        catch (JSDisconnectedException)
+        {
+            // Browser schon weg (sofort weiternavigiert): ein unbehandelter Fehler hier würde nur den Circuit beenden.
+        }
+    }
+
+    /// <summary>
+    /// Vom Browser gerufen, sobald die Warnschwelle erreicht ist — und bei jeder weiteren Prüfung, damit der Countdown
+    /// der Aktivität anderer Tabs folgt. Die Restzeit kommt als Dauer, weil Browser- und Serveruhr abweichen können.
+    /// </summary>
+    [JSInvokable]
+    public async Task ZeigeWarnung(double restMs)
+    {
+        _ablauf = DateTime.UtcNow.AddMilliseconds(restMs);
+        _warnungSichtbar = true;
+        _countdown ??= StarteCountdown();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Vom Browser gerufen, wenn Aktivität (auch in einem anderen Tab) die Warnung erledigt hat.</summary>
+    [JSInvokable]
+    public async Task VerbergeWarnung()
+    {
+        StoppeCountdown();
+        _warnungSichtbar = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Beendet Modul und Referenz; der Browser ist dabei oft längst weg, weil Dispose erst nach der DisconnectedCircuitRetentionPeriod läuft.</summary>
+    public async ValueTask DisposeAsync()
+    {
+        StoppeCountdown();
+        try
+        {
+            if (_modul != null)
+            {
+                await _modul.InvokeVoidAsync("stop");
+                await _modul.DisposeAsync();
+            }
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+
+        _eigeneReferenz?.Dispose();
+    }
+
+    private async Task Verlaengern()
+    {
+        await VerbergeWarnung();
+        await RufeModul("verlaengern");
+    }
+
+    private CancellationTokenSource StarteCountdown()
+    {
+        var countdown = new CancellationTokenSource();
+        _ = ZaehleHerunter(countdown);
+        return countdown;
+    }
+
+    private void StoppeCountdown()
+    {
+        _countdown?.Cancel();
+        _countdown?.Dispose();
+        _countdown = null;
+    }
+
+    // Der Server-Timer wird nicht gedrosselt (Browser drosseln Timer in Hintergrund-Tabs) und liefert so den pünktlichen
+    // Auslöser; die Entscheidung trifft pruefe() im Browser anhand von localStorage.
+    private async Task ZaehleHerunter(CancellationTokenSource countdown)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(countdown.Token))
+            {
+                await InvokeAsync(() => Tick(countdown));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task Tick(CancellationTokenSource countdown)
+    {
+        // Inzwischen gestoppt und allenfalls neu gestartet: dieser Tick gehört nicht mehr zum aktuellen Countdown.
+        if (_countdown != countdown)
+        {
+            return;
+        }
+
+        if (_ablauf > DateTime.UtcNow)
+        {
+            StateHasChanged();
+            return;
+        }
+
+        // Bei 0 entscheidet der Browser, nicht der Server: nur er kennt localStorage und Cookie.
+        StoppeCountdown();
+        await RufeModul("pruefe");
+    }
+
+    // Der Circuit kann bei jedem Aufruf gerade getrennt sein (Reconnect, Tab geschlossen); die Überwachung läuft im
+    // Browser unabhängig davon weiter oder ist mit ihm verschwunden — beides kein Grund, den Circuit zu beenden.
+    private async Task RufeModul(string funktion)
+    {
+        try
+        {
+            await _modul!.InvokeVoidAsync(funktion);
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+}

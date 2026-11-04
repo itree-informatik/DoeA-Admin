@@ -1,0 +1,32 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL */
+
+.anzahl-tage-zeile {
+    display: grid;
+    grid-template-columns: subgrid;
+}
+
+/* Spalte «Eingereicht»: Anzahl Tage, darunter die Meldung zu «Eingereicht»; contain verhindert, dass die Meldung die
+   Spalte des Rasters verbreitert. */
+.anzahl-tage-eingereicht {
+    contain: inline-size;
+}
+
+.anzahl-tage-feld {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    white-space: nowrap;
+}
+
+/* Unter dem Publikationsfeld bis zum Zeilenende, dort umbrechend; contain verhindert, dass die Länge der
+   Meldung die Spalten des Rasters aufdrückt (die Zeile ist ein subgrid). */
+.anzahl-tage-meldung {
+    grid-column: 2 / -1;
+    contain: inline-size;
+}
+
+.anzahl-tage-ueberschritten {
+    color: var(--mud-palette-error);
+    font-weight: 600;
+}

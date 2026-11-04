@@ -1,0 +1,126 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@page "/einstellungen/translations"
+@using DoeA.Interfaces.Einstellungen
+@using DoeA.Validator.Einstellungen
+@using static DoeA.Data.Helper.TranslationHelper
+
+@inherits BaseComponent
+
+@inject ITranslationService TranslationService
+
+<ItreeSiteTitle TranslationKey="EINSTELLUNGEN_TRANSLATIONS" />
+
+@if (_translations == null)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <ItreeGrid TItem="TranslationItem" Data="_gefiltert" Pageable="true" PageSize="50" PageSizes="PageSizeOptions"
+               Sortable="true" FilterMode="ItreeGridFilterMode.FilterMenu" OnRowClick="SelectItem">
+        <GridToolBarTemplate>
+            <ItreeSearchbox Id="searchbox" OnClick="Suchen" Placeholder="@TranslationHelper.Translate("BUTTON_SUCHEN")"
+                            @bind-value="_searchString" HideOnlyActive="true" />
+        </GridToolBarTemplate>
+        <GridColumns>
+            <ItreeGridColumn Field="Key" Title="@TranslationHelper.Translate("EINSTELLUNGEN_TRANSLATIONS_KEY")" />
+            <ItreeGridColumn Field="Deutsch" Title="@TranslationHelper.Translate("EINSTELLUNGEN_TRANSLATIONS_DEUTSCH")" />
+            <ItreeGridColumn Field="Franzoesisch" Title="@TranslationHelper.Translate("EINSTELLUNGEN_TRANSLATIONS_FRANZOESISCH")" />
+            <ItreeGridColumn Field="Italienisch" Title="@TranslationHelper.Translate("EINSTELLUNGEN_TRANSLATIONS_ITALIENISCH")" />
+            <ItreeGridColumn Field="RelVersion" Title="@TranslationHelper.Translate("EINSTELLUNGEN_TRANSLATIONS_VERSION")" />
+        </GridColumns>
+    </ItreeGrid>
+}
+
+<ItreeFormWindow WindowVisible="@(_selectedItem != null)"
+                 WindowWidth="800px"
+                 Model="@_selectedItem"
+                 OnSave="@Save"
+                 Validator="@_validator"
+                 AutoGenerate="true"
+                 PrefixTranslationKey="EINSTELLUNGEN_TRANSLATIONS"
+                 IgnorePropertyList="Id,Key,RelVersion"
+                 OnClose="@Cancel">
+</ItreeFormWindow>
+
+@code {
+    private static readonly List<int?> PageSizeOptions = [25, 50, 100];
+
+    private readonly TranslationValidator _validator = new();
+
+    private string _searchString = string.Empty;
+
+    private IReadOnlyList<TranslationItem>? _gefiltert;
+    private IReadOnlyList<TranslationItem>? _translations;
+
+    private TranslationItem? _originalItem;
+    private TranslationItem? _selectedItem;
+
+    protected override void OnInitialized()
+    {
+        // Die Übersetzungen liegen bereits im Speicher (einmalig beim Start geladen).
+        _translations = TranslationHelper.Translations;
+        _gefiltert = _translations;
+    }
+
+    /// <summary>Sucht in Schlüssel und allen Sprachspalten gleichzeitig.</summary>
+    private void Suchen()
+    {
+        var suchbegriff = _searchString.Trim();
+        _gefiltert = suchbegriff.Length == 0
+            ? _translations
+            : _translations!.Where(item => item.Key.Contains(suchbegriff, StringComparison.OrdinalIgnoreCase)
+                                           || (item.Deutsch?.Contains(suchbegriff, StringComparison.OrdinalIgnoreCase) ?? false)
+                                           || (item.Franzoesisch?.Contains(suchbegriff, StringComparison.OrdinalIgnoreCase) ?? false)
+                                           || (item.Italienisch?.Contains(suchbegriff, StringComparison.OrdinalIgnoreCase) ?? false))
+                            .ToList();
+    }
+
+    private void SelectItem(ItreeGridRowClickEventArgs args)
+    {
+        if (args.Item is not TranslationItem item)
+        {
+            return;
+        }
+
+        _originalItem = item;
+        _selectedItem = _originalItem.Clone();
+    }
+
+    private void Cancel()
+    {
+        _originalItem = null;
+        _selectedItem = null;
+    }
+
+    private async Task Save()
+    {
+        if (_selectedItem == null || _originalItem == null)
+        {
+            return;
+        }
+
+        // Fehler (z.B. DB nicht erreichbar) im Fehlerfenster anzeigen statt den Circuit zu beenden;
+        // das Formular bleibt in diesem Fall offen.
+        var erfolgreich = await ErrorHandler.HandleAsync(async () =>
+        {
+            // Den Cache im TranslationHelper zieht der Service selbst nach.
+            if (!await TranslationService.UpdateTranslation(
+                    _selectedItem.Id, _selectedItem.Deutsch, _selectedItem.Franzoesisch, _selectedItem.Italienisch))
+            {
+                throw new InvalidOperationException(GeneralConstants.NotFoundError);
+            }
+        });
+
+        if (!erfolgreich)
+        {
+            return;
+        }
+
+        _originalItem = null;
+        _selectedItem = null;
+        await InvokeAsync(StateHasChanged);
+    }
+}

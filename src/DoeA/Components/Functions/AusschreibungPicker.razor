@@ -1,0 +1,104 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Components.Pages.Ausschreibung
+@using DoeA.Data.Models.DTO
+@using DoeA.Interfaces
+@inherits BaseComponent
+
+@inject INavigationService NavigationService
+
+@* Wiederverwendbarer Picker für einen Verweis auf eine andere Ausschreibung
+   (Hauptprojekt, Vorankündigung oder RFI): Anzeigefeld + Auswahl/Löschen/Navigieren-Button
+   und ein Such-Popout mit der AusschreibungSucheComponent. *@
+<div class="d-flex flex-column">
+    @if (!string.IsNullOrEmpty(LabelKey))
+    {
+        <label class="form-label">@TranslationHelper.Translate(LabelKey)</label>
+    }
+    <div class="d-flex align-items-center gap-2 picker-feld">
+        <MudTextField T="string" ReadOnly="true" Disabled="true" Value="@(Verweis?.Bezeichnung ?? string.Empty)" />
+        <ItreeButton Type="EnumButton.Hinzufuegen" OnClick="@(() => _showPopout = true)" ShowButtonText="false" Enabled="@Enabled" />
+        @if (Verweis is { } verweis && verweis.Id != Guid.Empty)
+        {
+            <ItreeButton Type="EnumButton.Loeschen" OnClick="@Entfernen" ShowButtonText="false" Enabled="@Enabled" Class="btn-loeschen" />
+            <MudIconButton Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small" OnClick="@Navigieren" />
+        }
+    </div>
+</div>
+
+@if (_showPopout)
+{
+    <ItreeWindow @bind-Visible="_showPopout" MaxWidth="MaxWidth.ExtraLarge">
+        <WindowTitle>
+            <strong>@TranslationHelper.Translate(ModalTitleKey)</strong>
+        </WindowTitle>
+        <WindowContent>
+            <AusschreibungSucheComponent OnSelect="OnAusgewaehlt"
+                                         ChildAusschreibung="AusschreibungId"
+                                         SearchForHauptprojekt="SearchForHauptprojekt"
+                                         VerfahrensartFilter="@VerfahrensartFilter" />
+        </WindowContent>
+        <WindowFooter>
+            <ItreeButton Type="EnumButton.Schliessen" OnClick="@(() => _showPopout = false)" />
+        </WindowFooter>
+    </ItreeWindow>
+}
+
+@code {
+    /// <summary>Aktuell verknüpfter Verweis (Id + Bezeichnung). Two-Way-Binding via <c>VerweisChanged</c>.</summary>
+    [Parameter] public Ausschreibung? Verweis { get; set; }
+
+    /// <summary>Meldet den geänderten Verweis an den Aufrufer.</summary>
+    [Parameter] public EventCallback<Ausschreibung?> VerweisChanged { get; set; }
+
+    /// <summary>Wird zusätzlich nach einer Auswahl aufgerufen (z.B. für die RFI-Übernahme aus einer Vorankündigung).</summary>
+    [Parameter] public EventCallback<Ausschreibung> OnSelected { get; set; }
+
+    /// <summary>Translation-Key für das Label über dem Feld (leer = kein Label).</summary>
+    [Parameter] public string LabelKey { get; set; } = string.Empty;
+
+    /// <summary>Translation-Key für den Titel des Auswahl-Popouts.</summary>
+    [Parameter] public string ModalTitleKey { get; set; } = "AUSWAEHLEN";
+
+    /// <summary>Id der aktuellen Ausschreibung – schliesst sie als Selbstreferenz aus der Auswahl aus.</summary>
+    [Parameter] public Guid? AusschreibungId { get; set; }
+
+    /// <summary>Aktiviert den Hauptprojekt-Suchmodus (Bau + ohne übergeordnetes Projekt).</summary>
+    [Parameter] public bool SearchForHauptprojekt { get; set; }
+
+    /// <summary>Filtert die Auswahl auf Verfahrensarten (NaturalIds), z.B. Vorankündigungs-Varianten oder RFI.</summary>
+    [Parameter] public string[]? VerfahrensartFilter { get; set; }
+
+    /// <summary>Steuert, ob Auswahl/Löschen möglich ist (Navigation bleibt immer möglich).</summary>
+    [Parameter] public bool Enabled { get; set; } = true;
+
+    private bool _showPopout;
+
+    private async Task OnAusgewaehlt(AusschreibungSuche item)
+    {
+        var verweis = new Ausschreibung { Id = item.Id, Bezeichnung = item.Bezeichnung };
+        Verweis = verweis;
+        _showPopout = false;
+
+        await VerweisChanged.InvokeAsync(verweis);
+        if (OnSelected.HasDelegate)
+        {
+            await OnSelected.InvokeAsync(verweis);
+        }
+    }
+
+    private async Task Entfernen()
+    {
+        Verweis = null;
+        await VerweisChanged.InvokeAsync(null);
+    }
+
+    private void Navigieren()
+    {
+        if (Verweis is { } verweis && verweis.Id != Guid.Empty)
+        {
+            NavigationService.NavigateTo($"/ausschreibung/{verweis.Id}");
+        }
+    }
+}

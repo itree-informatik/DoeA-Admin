@@ -1,0 +1,81 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Data.Models.DTO
+@using DoeA.Data.Models.DTO.Stammdaten
+@using DoeA.Validator.Stammdaten
+@using DoeA.Interfaces.Stammdaten
+
+@inherits EditComponent<Ressort, IRessortService>
+
+@inject IAmtService AmtService
+
+@if (DataList == null || _aemter == null)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <ItreeGrid TItem="Ressort" Data="DataList"
+               Sortable="true" FilterMode="ItreeGridFilterMode.FilterMenu" OnRowClick="@SelectItem">
+        <GridToolBarTemplate>
+            <ItreeSearchbox Id="searchbox" OnClick="@LoadData" Placeholder="@TranslationHelper.Translate("AUSWAEHLEN")" @bind-value="@SearchValue" @bind-onlyActive="NurAktive" />
+            <MudSpacer />
+            <ItreeButton Type="EnumButton.Neu" OnClick="@(() => SelectItem(new Ressort()))" />
+        </GridToolBarTemplate>
+        <GridColumns>
+            <ItreeGridColumn Field="Bezeichnung" Title="@TranslationHelper.Translate("STAMMDATEN_RESSORT_BEZEICHNUNG")" />
+            <ItreeGridColumn Field="Kurzbezeichnung" Title="@TranslationHelper.Translate("STAMMDATEN_RESSORT_KURZBEZEICHNUNG")" />
+            <ItreeGridColumn Field="AmtId" Sortable="false" Title="@TranslationHelper.Translate("STAMMDATEN_RESSORT_AMT")">
+                <Template>
+                    @(_aemter!.FirstOrDefault(a => a.Id == context.AmtId)?.Kurzbezeichnung)
+                </Template>
+                <FilterMenuTemplate>
+                    <ItreeFilterCheckboxList Items="_filterAmtEintraege" SelectedKeys="_filterAmtAuswahl" IdPrefix="amt" />
+                </FilterMenuTemplate>
+                <FilterMenuButtonsTemplate Context="filter">
+                    <ItreeFilterButtons OnFilter="@(() => MultiFilterAsync(filter, nameof(Ressort.AmtId), _filterAmtAuswahl, s => Guid.Parse(s)))"
+                                        OnClear="@(() => MultiClearFilterAsync(filter, _filterAmtAuswahl))" />
+                </FilterMenuButtonsTemplate>
+            </ItreeGridColumn>
+            <ItreeGridColumn Field="Aktiv" Title="@TranslationHelper.Translate("STAMMDATEN_RESSORT_AKTIV")">
+                <Template>
+                    <JaNeinIcon Wert="context.Aktiv" />
+                </Template>
+            </ItreeGridColumn>
+        </GridColumns>
+    </ItreeGrid>
+
+    <ItreeFormWindow WindowVisible="@(SelectedItem != null)"
+                     WindowWidth="800px"
+                     Model="@SelectedItem"
+                     OnSave="@Save"
+                     Validator="@Validator"
+                     AutoGenerate="true"
+                     WithBaseProperties="true"
+                     IgnorePropertyList="@BasisfelderAusgeblendet"
+                     PrefixTranslationKey="STAMMDATEN_RESSORT"
+                     OnClose="@Cancel"
+                     DropdownList="@_dropdowns"
+                     OnDelete="Delete"
+                     DeleteButtonShow="true" />
+}
+
+@code {
+    private Dictionary<string, string> _filterAmtEintraege = new();
+
+    private List<Amt>? _aemter;
+    private List<ItreeFormDropdown> _dropdowns = new();
+    private List<string> _filterAmtAuswahl = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        Validator = new RessortValidator(true);
+        _aemter = await AmtService.GetAll();
+        _filterAmtEintraege = FilterEintraege(_aemter!, e => e.Bezeichnung);
+
+        var dropdownAmt = CreateItreeFormDropdown(_aemter!.OrderBy(a => a.Bezeichnung).ToList(), "AmtId", "STAMMDATEN_RESSORT_AMT");
+        _dropdowns.Add(dropdownAmt);
+    }
+}

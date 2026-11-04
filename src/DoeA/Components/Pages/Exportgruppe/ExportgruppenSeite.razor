@@ -1,0 +1,46 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@page "/exportgruppen"
+@using DoeA.Data.Models.DTO.Exportgruppen
+@inherits BaseComponent
+@inject IExportgruppeService ExportgruppeService
+@inject INavigationService NavigationService
+
+<ItreeSiteTitle TranslationKey="MENU_EXPORTGRUPPEN" />
+
+@if (_dataList == null)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <ItreeGrid TItem="ExportgruppeListItem" Data="_dataList" Pageable="true" PageSize="PageSize" PageSizes="PageSizeOptions"
+               Sortable="true" FilterMode="ItreeGridFilterMode.FilterMenu" OnRowClick="Open">
+        <GridToolBarTemplate>
+            <ItreeButton Type="EnumButton.Neu" OnClick="@Create" ButtonTextKey="EXPORTGRUPPE_NEU" />
+        </GridToolBarTemplate>
+        <GridColumns>
+            <ItreeGridColumn Field="Name" Title="@TranslationHelper.Translate("EXPORTGRUPPEN_NAME")" />
+        </GridColumns>
+    </ItreeGrid>
+}
+
+@code {
+    private const int PageSize = 10;
+
+    private static readonly List<int?> PageSizeOptions = [10, 25, 50];
+
+    private List<ExportgruppeListItem>? _dataList;
+
+    private void Open(ItreeGridRowClickEventArgs args) =>
+        NavigationService.NavigateTo($"exportgruppe/{((ExportgruppeListItem)args.Item).Id}");
+
+    // Guid.Empty signalisiert der Detailseite eine Neuanlage.
+    private void Create() => NavigationService.NavigateTo($"exportgruppe/{Guid.Empty}");
+
+    protected override async Task OnInitializedAsync()
+    {
+        _dataList = await ExportgruppeService.GetAllAsync();
+    }
+}

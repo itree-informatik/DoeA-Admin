@@ -1,0 +1,116 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@inherits LayoutComponentBase
+@implements IDisposable
+
+@inject ConfirmService ConfirmService
+@inject IErrorHandlerService ErrorHandlerService
+@inject LanguageService LanguageService
+@inject IAktuellerBenutzer AktuellerBenutzer
+@inject IBenutzerService BenutzerService
+@inject INavigationService Navigation
+
+@* TranslationHelper.CurrentLanguage ist statisch und wird von allen Komponenten des Renderdurchlaufs
+   gelesen — deshalb hier im Layout gesetzt, bevor der Rest des Baums gerendert wird. *@
+@{ TranslationHelper.CurrentLanguage = LanguageService.CurrentLanguage; }
+
+<ItreeRootComponent Theme="DoeATheme.Standard">
+    <div @key="@LanguageService.CurrentLanguage">
+        <Kopfzeile>
+            @* Die Sprache kommt aus T_User (Cookie-Claim); jede Auswahl wird am Benutzer gespeichert. *@
+            <ItreeLanguagePicker Variant="ItreeLanguagePickerVariant.Dezent" OnLanguageSelected="SpracheGewaehlt" />
+            <span class="benutzer">@AktuellerBenutzer.Anzeigename</span>
+            <MudIconButton Icon="@Icons.Material.Filled.Logout" Size="Size.Small"
+                           title="@TranslationHelper.Translate("ANMELDUNG_ABMELDEN")"
+                           OnClick="Abmelden" />
+        </Kopfzeile>
+
+        <div class="page">
+            <div class="sidebar">
+                <NavMenu />
+            </div>
+
+            <main>
+                <article class="content px-4" id="body-content">
+                    @Body
+                </article>
+            </main>
+        </div>
+
+        <ErrorDialog ErrorCode="@_errorCode"
+                     IsVisible="@_showErrorWindow"
+                     OnClose="@OnErrorWindowClosed" />
+
+        @* Die beiden Bestätigungsdialoge liegen im Layout, damit jede Seite sie über den
+           ConfirmService auslösen kann, ohne sie selbst einzubinden. *@
+        <ConfirmDialog IsVisible="@ConfirmService.IsCancelVisible"
+                       CheckHandler="@ConfirmService.HandleCancel"
+                       Type="EnumConfirmType.Cancel" />
+
+        <ConfirmDialog IsVisible="@ConfirmService.IsDeleteVisible"
+                       CheckHandler="@ConfirmService.HandleDelete"
+                       Type="EnumConfirmType.Delete" />
+
+        @* Nur im MainLayout: AnmeldungLayout ist anonym und darf keinen Heartbeat senden. *@
+        <SitzungsUeberwachung />
+
+        <Fusszeile />
+    </div>
+</ItreeRootComponent>
+
+<div id="blazor-error-ui">
+    @TranslationHelper.Translate("FEHLERBANNER_TEXT")
+    <a href="" class="reload">@TranslationHelper.Translate("FEHLERBANNER_NEU_LADEN")</a>
+    <a class="dismiss">🗙</a>
+</div>
+
+@code {
+    private bool _showErrorWindow;
+
+    private string? _errorCode;
+
+    private void Abmelden() => Navigation.NavigateTo(AnmeldungEndpoints.PfadAbmeldung, forceReload: true);
+
+    private void OnConfirmChanged() => InvokeAsync(StateHasChanged);
+
+    private void OnErrorWindowClosed() => _showErrorWindow = false;
+
+    private void OnLanguageChanged() => InvokeAsync(StateHasChanged);
+
+    protected override void OnInitialized()
+    {
+        // Sprache aus dem Cookie-Claim übernehmen, bevor OnLanguageChanged abonniert wird — die Initialisierung ist keine Benutzerwahl.
+        if (SprachHelper.IstUnterstuetzt(AktuellerBenutzer.Sprache))
+        {
+            LanguageService.CurrentLanguage = AktuellerBenutzer.Sprache;
+        }
+
+        ErrorHandlerService.OnError += ShowErrorWindow;
+        ConfirmService.OnChange += OnConfirmChanged;
+        LanguageService.OnLanguageChanged += OnLanguageChanged;
+    }
+
+    /// <summary>Persistiert die Sprachwahl am Benutzer; der Cookie-Claim zieht beim nächsten HTTP-Request nach.</summary>
+    private async Task SpracheGewaehlt(string code)
+    {
+        await ErrorHandlerService.HandleAsync(() => BenutzerService.SetzeSprache(AktuellerBenutzer.ExtId, code));
+    }
+
+    private void ShowErrorWindow(string errorMessage)
+    {
+        _errorCode = errorMessage;
+        _showErrorWindow = true;
+
+        // Der Aufruf kommt aus einem Service-Event ausserhalb des Renderer-Threads.
+        InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Meldet das Layout von allen Service-Events ab.</summary>
+    public void Dispose()
+    {
+        ErrorHandlerService.OnError -= ShowErrorWindow;
+        ConfirmService.OnChange -= OnConfirmChanged;
+        LanguageService.OnLanguageChanged -= OnLanguageChanged;
+    }
+}

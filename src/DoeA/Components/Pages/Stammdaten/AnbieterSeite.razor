@@ -1,0 +1,196 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@page "/stammdaten/anbieter"
+@using DoeA.Data.Models.DTO
+@using DoeA.Data.Models.DTO.Stammdaten
+@using DoeA.Interfaces.Stammdaten
+@using DoeA.Validator.Stammdaten
+@inherits EditComponent<Anbieter, IAnbieterService>
+@inject IOrtschaftService OrtschaftService
+
+<ItreeSiteTitle TranslationKey="STAMMDATEN" />
+
+@if (_isLoading)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <ItreeGrid TItem="Anbieter" Data="DataList" Pageable="true" PageSize="@PageSize" PageSizes="@PageSizeOptions"
+               Sortable="true" FilterMode="ItreeGridFilterMode.FilterMenu" OnRowClick="@SelectItem">
+        <GridToolBarTemplate>
+            <ItreeSearchbox Id="searchbox" OnClick="@LoadData" Placeholder="@TranslationHelper.Translate("AUSWAEHLEN")" @bind-value="@SearchValue" @bind-onlyActive="NurAktive" />
+            <MudSpacer />
+            <ItreeButton Type="EnumButton.Neu" OnClick="@(() => SelectItem(new Anbieter()))" />
+        </GridToolBarTemplate>
+        <GridColumns>
+            <ItreeGridColumn Field="Name" Title="@TranslationHelper.Translate("STAMMDATEN_ANBIETER_NAME")" />
+            <ItreeGridColumn Field="Adresse" Title="@TranslationHelper.Translate("STAMMDATEN_ANBIETER_ADRESSE")" />
+            <ItreeGridColumn Field="Adresse2" Title="@TranslationHelper.Translate("STAMMDATEN_ANBIETER_ADRESSE2")" />
+            <ItreeGridColumn Field="Adresse3" Title="@TranslationHelper.Translate("STAMMDATEN_ANBIETER_ADRESSE3")" />
+            <ItreeGridColumn Title="@TranslationHelper.Translate("STAMMDATEN_ANBIETER_ORTSCHAFT")">
+                <Template>
+                    @context.Ortschaft?.Ort
+                </Template>
+            </ItreeGridColumn>
+            <ItreeGridColumn Field="Aktiv" Title="@TranslationHelper.Translate("STAMMDATEN_ANBIETER_AKTIV")">
+                <Template>
+                    <JaNeinIcon Wert="context.Aktiv" />
+                </Template>
+            </ItreeGridColumn>
+            <ItreeGridColumn Sortable="false" Filterable="false">
+                <Template>
+                    @if (OnSelect.HasDelegate)
+                    {
+                        <div class="btn-group-grid">
+                            <ItreeButton Type="EnumButton.Hinzufuegen" OnClick="@(() => OnItemSelected(context))" ShowButtonText="false" />
+                        </div>
+                    }
+                </Template>
+            </ItreeGridColumn>
+        </GridColumns>
+    </ItreeGrid>
+
+    <ItreeFormWindow @ref="_formWindow"
+                     TModel="Anbieter"
+                     WindowVisible="@(SelectedItem != null)"
+                     WindowWidth="800px"
+                     Model="@SelectedItem"
+                     OnSave="@SaveAndMaybeSelect"
+                     Validator="@Validator"
+                     AutoGenerate="true"
+                     PrefixTranslationKey="STAMMDATEN_ANBIETER"
+                     WithBaseProperties="true"
+                     IgnorePropertyList="@($"{BasisfelderAusgeblendet},OrtId")"
+                     OnClose="@Cancel"
+                     OnDelete="Delete"
+                     DeleteButtonShow="true">
+        @if (SelectedItem != null)
+        {
+            @* Ortschaft-Zuweisung analog zur Anbieter-Auswahl: Suche/Erfassung über Popout statt Dropdown. *@
+            <OrtschaftPicker Ortschaft="SelectedItem.Ortschaft"
+                             OrtschaftChanged="OnOrtschaftPicked"
+                             Label="@TranslationHelper.Translate("STAMMDATEN_ANBIETER_ORTSCHAFT")" />
+            <ValidationMessage For="() => SelectedItem.OrtId" />
+        }
+    </ItreeFormWindow>
+}
+
+@code {
+    private bool _isLoading = true;
+
+    private ItreeFormWindow<Anbieter>? _formWindow;
+
+    private List<Ortschaft>? _ortschaften;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        Validator = new AnbieterValidator(true);
+        _ortschaften = await OrtschaftService.GetAll();
+
+        // Die Liste liefert nur die OrtId — Navigation für die Ortschafts-Spalte auflösen.
+        if (DataList != null)
+        {
+            foreach (var item in DataList)
+            {
+                item.Ortschaft = _ortschaften!.FirstOrDefault(o => o.Id == item.OrtId);
+            }
+        }
+
+        _isLoading = false;
+    }
+
+    /// <summary>Übernimmt einen bestehenden Eintrag aus dem Grid in den Aufrufer.</summary>
+    private async Task OnItemSelected(Anbieter item)
+    {
+        if (!OnSelect.HasDelegate)
+        {
+            throw new InvalidOperationException("Missing 'OnSelect' Event");
+        }
+
+        await OnSelect.InvokeAsync(item);
+    }
+
+    /// <summary>
+    /// Übernimmt die im Popout gewählte/neu erfasste Ortschaft in das aktuelle Modell und frischt
+    /// Änderungs-Erkennung und Validierung des Erfassungsformulars auf (das Feld wird nicht autogeneriert).
+    /// </summary>
+    private void OnOrtschaftPicked(Ortschaft? ortschaft)
+    {
+        if (SelectedItem == null)
+        {
+            return;
+        }
+
+        SelectedItem.Ortschaft = ortschaft;
+        SelectedItem.OrtId = ortschaft?.Id ?? Guid.Empty;
+
+        _formWindow?.CustomItreeForm?.HasChanges();
+        _formWindow?.CustomItreeForm?.EditContext?.Validate();
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Speichert den Eintrag (analog zu <see cref="EditComponent{TModel,TService}.Save"/>) und übernimmt
+    /// einen neu erfassten Anbieter im Popout-Modus direkt in den Aufrufer.
+    /// </summary>
+    private async Task SaveAndMaybeSelect()
+    {
+        if (SelectedItem == null)
+        {
+            return;
+        }
+
+        // Fehler wie in EditComponent.Save im Fehlerfenster anzeigen statt den Circuit zu beenden;
+        // das Formular bleibt in diesem Fall offen.
+        var istNeu = SelectedItem.Id == Guid.Empty;
+        var erfolgreich = false;
+        var gespeichert = default(Anbieter);
+        await ErrorHandler.HandleAsync(async () =>
+        {
+            gespeichert = istNeu
+                ? await Service!.Create(SelectedItem)
+                : await Service!.Update(SelectedItem);
+            erfolgreich = true;
+            return new ServiceResult<Anbieter>();
+        });
+
+        if (!erfolgreich)
+        {
+            // Die Validierung stempelt vor dem Insert bereits eine Id auf das Modell — zurücksetzen,
+            // damit der nächste Speicherversuch wieder als Neuanlage läuft.
+            if (istNeu)
+            {
+                SelectedItem.Id = Guid.Empty;
+            }
+
+            return;
+        }
+
+        // Ortschaft-Navigation für die Grid-Anzeige auflösen (Create/Update liefert nur die OrtId).
+        // Bevorzugt die bereits gewählte Ortschaft (auch frisch erfasste), sonst aus der Stammliste.
+        gespeichert!.Ortschaft = SelectedItem.Ortschaft ?? _ortschaften?.FirstOrDefault(o => o.Id == gespeichert.OrtId);
+
+        if (DataList != null)
+        {
+            var vorhanden = DataList.SingleOrDefault(d => d.Id == gespeichert.Id);
+            if (vorhanden != null)
+            {
+                DataList.Remove(vorhanden);
+            }
+
+            DataList.Add(gespeichert);
+        }
+
+        SelectedItem = null;
+
+        if (istNeu && OnSelect.HasDelegate)
+        {
+            await OnSelect.InvokeAsync(gespeichert);
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+}

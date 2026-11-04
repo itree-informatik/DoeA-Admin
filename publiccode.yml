@@ -1,0 +1,159 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL
+
+# Strukturierte Metadaten nach dem Standard publiccode.yml (https://yml.publiccode.tools/)
+# für den OSS-Katalog des Bundes.
+publiccodeYmlVersion: "0.4.0"
+
+name: DoeA
+url: "https://github.com/itree-informatik/DoeA-Admin"
+developmentStatus: stable
+softwareType: standalone/web
+platforms:
+  - web
+categories:
+  - procurement
+usedBy:
+  - Bundesamt für Bauten und Logistik BBL
+
+description:
+  de:
+    localisedName: DoeA – Dienst öffentliche Ausschreibungen
+    shortDescription: >-
+      Webanwendung des BBL zur Administration der Publikationen auf SIMAP: Ausschreibungen,
+      Zuschläge, Widerrufe und Auswertungen.
+    longDescription: >-
+      DoeA («Dienst öffentliche Ausschreibungen») unterstützt das Bundesamt für Bauten und Logistik
+      (BBL) bei der Administration seiner Publikationen auf SIMAP, dem Informationssystem über das
+      öffentliche Beschaffungswesen in der Schweiz. Die Anwendung deckt den Lebenszyklus einer
+      Ausschreibung ab: Erfassung der Ausschreibung mit Losen, Offerten und beteiligten Anbietern,
+      Verwaltung von Zuschlägen, Abbrüchen und Widerrufen, Terminplanung der Verfahrensschritte sowie
+      Auswertungen als PDF und Excel (Abbrüche und Widerrufe, Zuschläge, Zielerreichung der fristgerechten
+      Publikation, Beschaffungscontrolling). Stammdaten wie Ämter, Departemente, Kantone, Anbieter,
+      Sachbearbeitende sowie CPV- und BKP-Nummern werden in der Anwendung gepflegt. Die Anmeldung erfolgt
+      über eIAM (OpenID Connect); autorisiert wird in der Anwendung selbst. DoeA ist eine Blazor-Server-
+      Anwendung auf .NET mit PostgreSQL, dreisprachig (Deutsch, Französisch, Italienisch) und wird als
+      Container betrieben. Sie ersetzt ein früheres System und wird nach Art. 9 EMBAG als Open Source
+      veröffentlicht.
+    features:
+      - Erfassung und Verwaltung von Ausschreibungen, Losen und Offerten
+      - Verwaltung von Zuschlägen, Abbrüchen und Widerrufen
+      - Terminplanung der Verfahrensschritte mit Fristenberechnung
+      - Auswertungen als PDF und Excel
+      - Stammdatenpflege (Ämter, Departemente, Kantone, Anbieter, CPV- und BKP-Nummern)
+      - Anmeldung über eIAM mit Freischaltung der Benutzenden in der Anwendung
+      - Dreisprachige Oberfläche (Deutsch, Französisch, Italienisch)
+  fr:
+    localisedName: DoeA – Service des appels d'offres publics
+    shortDescription: >-
+      Application web de l'OFCL pour la gestion des publications sur SIMAP : appels d'offres,
+      adjudications, révocations et évaluations.
+    longDescription: >-
+      DoeA (« Dienst öffentliche Ausschreibungen », service des appels d'offres publics) assiste
+      l'Office fédéral des constructions et de la logistique (OFCL) dans la gestion de ses publications
+      sur SIMAP, le système d'information sur les marchés publics en Suisse. L'application couvre le
+      cycle de vie d'un appel d'offres : saisie de l'appel d'offres avec ses lots, offres et
+      soumissionnaires, gestion des adjudications, interruptions et révocations, planification des
+      étapes de la procédure ainsi qu'évaluations au format PDF et Excel (interruptions et révocations,
+      adjudications, respect des délais de publication, controlling des acquisitions). Les données de
+      base telles que les offices, départements, cantons, soumissionnaires, collaborateurs et numéros
+      CPV et CFC sont gérées dans l'application. L'authentification s'effectue via eIAM (OpenID
+      Connect), l'autorisation dans l'application elle-même. DoeA est une application Blazor Server
+      sur .NET avec PostgreSQL, trilingue (allemand, français, italien) et exploitée en conteneur.
+      Elle remplace un système antérieur et est publiée en open source conformément à l'art. 9 LMETA.
+    features:
+      - Saisie et gestion des appels d'offres, lots et offres
+      - Gestion des adjudications, interruptions et révocations
+      - Planification des étapes de la procédure avec calcul des délais
+      - Évaluations au format PDF et Excel
+      - Gestion des données de base (offices, départements, cantons, soumissionnaires, numéros CPV et CFC)
+      - Authentification via eIAM avec activation des utilisateurs dans l'application
+      - Interface trilingue (allemand, français, italien)
+  it:
+    localisedName: DoeA – Servizio bandi di concorso pubblici
+    shortDescription: >-
+      Applicazione web dell'UFCL per la gestione delle pubblicazioni su SIMAP: bandi di concorso,
+      aggiudicazioni, revoche e valutazioni.
+    longDescription: >-
+      DoeA («Dienst öffentliche Ausschreibungen», servizio bandi di concorso pubblici) supporta
+      l'Ufficio federale delle costruzioni e della logistica (UFCL) nella gestione delle sue
+      pubblicazioni su SIMAP, il sistema d'informazione sugli appalti pubblici in Svizzera.
+      L'applicazione copre il ciclo di vita di un bando: registrazione del bando con lotti, offerte e
+      offerenti, gestione di aggiudicazioni, interruzioni e revoche, pianificazione delle fasi della
+      procedura e valutazioni in formato PDF ed Excel (interruzioni e revoche, aggiudicazioni,
+      rispetto dei termini di pubblicazione, controlling degli acquisti). I dati di base quali uffici,
+      dipartimenti, cantoni, offerenti, collaboratori e numeri CPV e CCC sono gestiti
+      nell'applicazione. L'autenticazione avviene tramite eIAM (OpenID Connect), l'autorizzazione
+      nell'applicazione stessa. DoeA è un'applicazione Blazor Server su .NET con PostgreSQL, trilingue
+      (tedesco, francese, italiano) ed è esercitata come container. Sostituisce un sistema precedente
+      ed è pubblicata come open source conformemente all'art. 9 LMeCA.
+    features:
+      - Registrazione e gestione di bandi, lotti e offerte
+      - Gestione di aggiudicazioni, interruzioni e revoche
+      - Pianificazione delle fasi della procedura con calcolo dei termini
+      - Valutazioni in formato PDF ed Excel
+      - Gestione dei dati di base (uffici, dipartimenti, cantoni, offerenti, numeri CPV e CCC)
+      - Autenticazione tramite eIAM con attivazione degli utenti nell'applicazione
+      - Interfaccia trilingue (tedesco, francese, italiano)
+  en:
+    localisedName: DoeA – Public Tenders Service
+    shortDescription: >-
+      Web application of the Swiss FOBL for managing its publications on SIMAP: tenders, awards,
+      revocations and reports.
+    longDescription: >-
+      DoeA ("Dienst öffentliche Ausschreibungen", public tenders service) supports the Swiss Federal
+      Office for Buildings and Logistics (FOBL) in managing its publications on SIMAP, the Swiss
+      information system on public procurement. The application covers the life cycle of a tender:
+      recording the tender with its lots, bids and bidders, managing awards, cancellations and
+      revocations, scheduling the procedural steps, and producing reports as PDF and Excel
+      (cancellations and revocations, awards, compliance with publication deadlines, procurement
+      controlling). Master data such as offices, departments, cantons, bidders, staff and CPV and BKP
+      codes are maintained within the application. Authentication is handled by eIAM (OpenID Connect),
+      authorisation by the application itself. DoeA is a Blazor Server application on .NET with
+      PostgreSQL, available in German, French and Italian, and runs as a container. It replaces a
+      previous system and is published as open source in accordance with Art. 9 EMBAG.
+    features:
+      - Recording and managing tenders, lots and bids
+      - Managing awards, cancellations and revocations
+      - Scheduling procedural steps with deadline calculation
+      - Reports as PDF and Excel
+      - Master data maintenance (offices, departments, cantons, bidders, CPV and BKP codes)
+      - Authentication via eIAM with user activation within the application
+      - Trilingual user interface (German, French, Italian)
+
+legal:
+  license: AGPL-3.0-or-later
+  mainCopyrightOwner: Schweizerische Eidgenossenschaft, vertreten durch das Bundesamt für Bauten und Logistik BBL
+  repoOwner: Bundesamt für Bauten und Logistik BBL
+
+maintenance:
+  type: contract
+  contractors:
+    - name: itree informatik GmbH
+      website: "https://www.itree.ch"
+      until: "2030-01-31"
+  contacts:
+    # Fachliche Anlaufstelle und Betrieb
+    - name: Kompetenzzentrum Beschaffungswesen Bund KBB
+      affiliation: Bundesamt für Bauten und Logistik BBL
+      email: info@bbl.admin.ch
+      phone: "+41 58 465 50 00"
+    # Technische Ansprechstelle: Sicherheitslücken, Fehler, Fragen zum Code
+    - name: itree informatik GmbH
+      affiliation: itree informatik GmbH, Bernstrasse 41, 3303 Jegenstorf
+
+localisation:
+  localisationReady: true
+  availableLanguages:
+    - de-CH
+    - fr-CH
+    - it-CH
+
+dependsOn:
+  open:
+    - name: .NET
+      versionMin: "10.0"
+    - name: PostgreSQL
+  proprietary:
+    - name: ItreeMud
+    - name: GemBox.Document

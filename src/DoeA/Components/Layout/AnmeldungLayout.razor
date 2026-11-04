@@ -1,0 +1,45 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@inherits LayoutComponentBase
+@implements IDisposable
+
+@inject LanguageService LanguageService
+@inject IAktuellerBenutzer AktuellerBenutzer
+
+@* Schlanker Rahmen für die Statusseite /anmeldung: ohne Navigation, weil der Benutzer hier nicht oder noch nicht
+   freigeschaltet ist. Startsprache ist der Claim des Cookies; eine Auswahl wird nicht gespeichert und gilt bis zum Neuladen. *@
+@{ TranslationHelper.CurrentLanguage = LanguageService.CurrentLanguage; }
+
+<ItreeRootComponent Theme="DoeATheme.Standard">
+    <div @key="@LanguageService.CurrentLanguage">
+        <Kopfzeile>
+            <ItreeLanguagePicker Variant="ItreeLanguagePickerVariant.Dezent" />
+        </Kopfzeile>
+
+        <main>
+            <article class="content px-4">
+                @Body
+            </article>
+        </main>
+
+        <Fusszeile />
+    </div>
+</ItreeRootComponent>
+
+@code {
+    private void OnLanguageChanged() => InvokeAsync(StateHasChanged);
+
+    /// <summary>Meldet das Layout vom LanguageService ab.</summary>
+    public void Dispose() => LanguageService.OnLanguageChanged -= OnLanguageChanged;
+
+    protected override void OnInitialized()
+    {
+        if (SprachHelper.IstUnterstuetzt(AktuellerBenutzer.Sprache))
+        {
+            LanguageService.CurrentLanguage = AktuellerBenutzer.Sprache;
+        }
+
+        LanguageService.OnLanguageChanged += OnLanguageChanged;
+    }
+}

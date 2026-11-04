@@ -1,0 +1,93 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Data.Models.DTO.Stammdaten
+@using DoeA.Interfaces.Stammdaten
+@inject IDepartementService DepartementService
+@inject IAmtService AmtService
+
+@* Departements-Auswahl mit nachgelagerter Mehrfachauswahl der zugehörigen Ämter.
+   Die Kacheln lesen das Ergebnis per @ref über Departement und Aemter aus. *@
+@if (_isLoading)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <div class="d-flex flex-column flex-grow0 mb-2 mt-2 w-100">
+        <label class="form-label">@TranslationHelper.Translate("SELECT_AEMTER_DEPARTEMENT")</label>
+        <ItreeDropDownList TItem="Departement" TValue="Guid?" Data="_departemente" TextField="Bezeichnung" ValueField="Id"
+                           Value="@_selectedDepId" ValueChanged="@DepartementChanged"
+                           DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" Clearable="true" />
+    </div>
+    @if (_aemterGefiltert.Count > 0)
+    {
+        <div class="d-flex flex-column w-100 mb-2">
+            <label class="form-label">@TranslationHelper.Translate("SELECT_AEMTER_AMTER")</label>
+            <MudPaper Outlined="true" Class="aemter-liste">
+                <MudList T="Amt" Dense="true">
+                    @foreach (var amt in _aemterGefiltert)
+                    {
+                        <MudListItem T="Amt" Class="dense-item">
+                            <MudCheckBox T="bool" Value="@(_selectedAemter.Contains(amt))"
+                                         ValueChanged="@((bool angehakt) => OnCheckboxChanged(angehakt, amt))"
+                                         Dense="true" Class="ma-0 pa-0" Label="@amt.Bezeichnung" />
+                        </MudListItem>
+                    }
+                </MudList>
+            </MudPaper>
+        </div>
+    }
+}
+
+@code {
+    private bool _isLoading = true;
+
+    private Guid? _selectedDepId;
+
+    private List<Amt> _aemterGefiltert = new();
+    private List<Amt> _selectedAemter = new();
+    private List<Amt>? _aemter;
+    private List<Departement>? _departemente;
+
+    /// <summary>Gewähltes Departement; <c>null</c>, solange keines ausgewählt ist.</summary>
+    public Departement? Departement { get; private set; }
+
+    /// <summary>Innerhalb des Departements angehakte Ämter.</summary>
+    public List<Amt> Aemter => _selectedAemter;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _departemente = (await DepartementService.GetAll()).Alphabetisch(d => d.Bezeichnung);
+        _aemter = await AmtService.GetAll();
+        _isLoading = false;
+    }
+
+    private void DepartementChanged(Guid? id)
+    {
+        _selectedDepId = id;
+
+        // Die Ämter-Auswahl gehört zum vorherigen Departement und wird komplett verworfen.
+        _selectedAemter.Clear();
+        _aemterGefiltert = id == null
+            ? new List<Amt>()
+            : (_aemter ?? []).Where(a => a.DepId == id).Alphabetisch(a => a.Bezeichnung);
+
+        Departement = id == null ? null : _departemente?.FirstOrDefault(d => d.Id == id);
+        StateHasChanged();
+    }
+
+    private void OnCheckboxChanged(bool angehakt, Amt amt)
+    {
+        if (!angehakt)
+        {
+            _selectedAemter.Remove(amt);
+            return;
+        }
+
+        if (!_selectedAemter.Contains(amt))
+        {
+            _selectedAemter.Add(amt);
+        }
+    }
+}

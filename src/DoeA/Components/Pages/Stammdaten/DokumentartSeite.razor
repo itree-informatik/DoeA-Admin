@@ -1,0 +1,45 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Data.Models.DTO.Stammdaten
+@using DoeA.Validator.Stammdaten
+@using DoeA.Interfaces.Stammdaten
+
+@inherits EditComponent<Dokumentart, IDokumentartService>
+
+@if (DataList == null)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <ItreeGrid TItem="Dokumentart" Data="DataList"
+               Sortable="true" FilterMode="ItreeGridFilterMode.FilterMenu" OnRowClick="@SelectItem">
+        <GridToolBarTemplate>
+            @* Bewusst ohne Neu- und Löschen-Aktion und ohne Aktiv (Formular, Spalte, Schalter): Die Dokumentarten sind über
+               ihre NaturalId applikationsrelevant (Sprachmatrix) — der Bestand ist fix und immer aktiv. *@
+            <ItreeSearchbox Id="searchbox" OnClick="@LoadData" Placeholder="@TranslationHelper.Translate("AUSWAEHLEN")" @bind-value="@SearchValue" HideOnlyActive="true" />
+        </GridToolBarTemplate>
+        <GridColumns>
+            <ItreeGridColumn Field="Bezeichnung" Title="@TranslationHelper.Translate("STAMMDATEN_DOKUMENTART_BEZEICHNUNG")" />
+            <ItreeGridColumn Field="Sortierung" Title="@TranslationHelper.Translate("STAMMDATEN_DOKUMENTART_SORTIERUNG")" />
+        </GridColumns>
+    </ItreeGrid>
+
+    <ItreeFormWindow WindowVisible="@(SelectedItem != null)"
+                     WindowWidth="800px"
+                     Model="@SelectedItem"
+                     OnSave="@Save"
+                     Validator="@Validator"
+                     AutoGenerate="true"
+                     PrefixTranslationKey="STAMMDATEN_DOKUMENTART"
+                     OnClose="@Cancel" />
+}
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        Validator = new DokumentartValidator(true);
+    }
+}

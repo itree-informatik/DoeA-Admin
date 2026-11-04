@@ -1,0 +1,53 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using System.Linq.Expressions
+
+@* Zeile direkt unter dem Datumspaar Eingereicht/Publikation: Anzahl Arbeitstage bis zur Publikation
+   (Berechnung wie Zielerreichung), nur Anzeige; rot, sobald die Frist aus der Konfiguration überschritten ist.
+   Darunter bzw. daneben die Validierungsmeldungen zu Eingereicht und Publikation: In den Feldern selbst würden sie
+   die Felder der Zeile gegeneinander verschieben (align-items: end).
+   Die Zeile übernimmt per subgrid die Spalten des Rasters, in dem das Datumspaar steht; in welcher Spalte
+   sie beginnt (der von «Eingereicht»), legt der Container fest. *@
+<div class="anzahl-tage-zeile">
+    <div class="anzahl-tage-eingereicht">
+        <div class="anzahl-tage-feld">
+            <label class="form-label mb-0">@TranslationHelper.Translate("AUSSCHREIBUNG_ANZAHLTAGE")</label>
+            <span class="@(Dauer > Frist ? "anzahl-tage-ueberschritten" : null)">@Dauer</span>
+        </div>
+        @if (MeldungEingereicht != null)
+        {
+            <ValidationMessage For="@MeldungEingereicht" />
+        }
+    </div>
+    @if (MeldungPublikation != null)
+    {
+        <div class="anzahl-tage-meldung">
+            <ValidationMessage For="@MeldungPublikation" />
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>Datum «Eingereicht».</summary>
+    [Parameter]
+    public DateOnly? Eingereicht { get; set; }
+
+    /// <summary>Datum der Publikation, bis zu dem gezählt wird.</summary>
+    [Parameter]
+    public DateOnly? Publikation { get; set; }
+
+    /// <summary>Maximal zulässige Anzahl Arbeitstage; <c>null</c> heisst: keine Hervorhebung.</summary>
+    [Parameter]
+    public int? Frist { get; set; }
+
+    /// <summary>Feld «Eingereicht», dessen Validierungsmeldung unter der Anzahl Tage (Spalte «Eingereicht») erscheint.</summary>
+    [Parameter]
+    public Expression<Func<DateOnly?>>? MeldungEingereicht { get; set; }
+
+    /// <summary>Publikationsfeld, dessen Validierungsmeldung unter der Spalte «Publikation» erscheint.</summary>
+    [Parameter]
+    public Expression<Func<DateOnly?>>? MeldungPublikation { get; set; }
+
+    private int? Dauer => ArbeitstageHelper.PublikationsDauer(Eingereicht, Publikation);
+}

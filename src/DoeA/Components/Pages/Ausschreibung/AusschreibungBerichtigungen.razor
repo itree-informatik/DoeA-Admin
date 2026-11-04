@@ -1,0 +1,103 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Data.Models.DTO
+
+@* Berichtigungen: aufklappbarer Bereich; zugeklappt, solange keine existieren *@
+<fieldset class="form-fieldset @(_expanded ? null : "fieldset-zugeklappt") mb-3">
+    <legend class="fieldset-legend legend-klappbar" @onclick="() => _expanded = !_expanded">
+        <i class="bi @(_expanded ? "bi-chevron-down" : "bi-chevron-right") me-1"></i>@TranslationHelper.Translate("AUSSCHREIBUNG_BERICHTIGUNGEN") (@Ausschreibung.Berichtigungen.Count)
+    </legend>
+    @if (_expanded)
+    {
+        @if (Ausschreibung.Berichtigungen.Any())
+        {
+            <div class="berichtigungen-grid">
+                <label class="form-label mb-0">@TranslationHelper.Translate("AUSSCHREIBUNG_BERICHTIGUNGEINGEREICHT")</label>
+                <label class="form-label mb-0">@TranslationHelper.Translate("AUSSCHREIBUNG_BERICHTIGUNGPUBLIZIERT")</label>
+                <label class="form-label mb-0">@TranslationHelper.Translate("AUSSCHREIBUNG_VERZOEGERUNGBERICHTIGUNGDURCHAUFTRAGGEBER")</label>
+                <label class="form-label mb-0">@TranslationHelper.Translate("AUSSCHREIBUNG_BERICHTIGUNGBEMERKUNGEN")</label>
+                <div></div>
+
+                @foreach (var ber in Ausschreibung.Berichtigungen)
+                {
+                    <div @key="ber" class="berichtigungen-row">
+                        @* Wrapper-Div = Grid-Zelle, damit die Validierungsmeldung unterhalb des
+                           Datums Platz findet, ohne die 5 Grid-Spalten zu verschieben. *@
+                        <div>
+                            <ItreeDatePicker TValue="DateOnly?" Value="@ber.Eingereicht"
+                                             ValueChanged="@((DateOnly? val) => Geaendert(() => ber.Eingereicht = val))"
+                                             Clearable="true" Class="datepicker-schmal" />
+                            <ValidationMessage For="() => ber.Eingereicht" />
+                        </div>
+                        <ItreeDatePicker TValue="DateOnly?" Value="@ber.Publiziert"
+                                         ValueChanged="@((DateOnly? val) => Geaendert(() => ber.Publiziert = val))"
+                                         Clearable="true" Class="datepicker-schmal" />
+                        @* Natives Checkbox-Input (kein InputCheckbox): InputBase würde den EditContext mit dem
+                           Berichtigung-Model benachrichtigen und der AusschreibungValidator im EditForm wirft dann. *@
+                        <div class="berichtigung-checkbox-cell">
+                            <input type="checkbox" class="form-check-input"
+                                   checked="@ber.VerzoegerungDurchAuftraggeber"
+                                   @onchange="@(e => Geaendert(() => ber.VerzoegerungDurchAuftraggeber = (bool)e.Value!))" />
+                        </div>
+                        @* Immediate: bindet pro Tastendruck, damit der Speichern-Button schon während des
+                           Tippens enabled wird (sonst erst nach Blur). title: zeigt den vollen Text als
+                           Tooltip, da die Zelle lange Bemerkungen abschneidet. *@
+                        <MudTextField T="string" MaxLength="4000" Immediate="true" Value="@ber.Bemerkungen"
+                                      ValueChanged="@((string v) => Geaendert(() => ber.Bemerkungen = v))" title="@ber.Bemerkungen" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                       OnClick="@(() => Geaendert(() => Ausschreibung.Berichtigungen.Remove(ber)))" />
+                        <AnzahlTageFeld Eingereicht="@ber.Eingereicht" Publikation="@ber.Publiziert" Frist="@FristPublikation"
+                                        MeldungPublikation="() => ber.Publiziert" />
+                    </div>
+                }
+            </div>
+        }
+        @if (VerfahrensartRegeln.DarfBerichtigungErfassen(Ausschreibung.Verfahrensart.NaturalId))
+        {
+            <div class="d-flex mt-3">
+                <span class="cpv-badge cpv-add-chip d-flex align-items-center" @onclick="Hinzufuegen">
+                    <i class="bi bi-plus-circle me-1"></i> @TranslationHelper.Translate("AUSSCHREIBUNG_BERICHTIGUNG_HINZUFUEGEN")
+                </span>
+            </div>
+        }
+    }
+</fieldset>
+
+@code {
+    /// <summary>Bearbeitete Ausschreibung — die Berichtigungen werden direkt auf ihr gepflegt.</summary>
+    [Parameter, EditorRequired]
+    public Ausschreibung Ausschreibung { get; set; } = null!;
+
+    /// <summary>Frist in Arbeitstagen, ab der die Anzahl Tage einer Berichtigung rot erscheint; <c>null</c> heisst: keine Hervorhebung.</summary>
+    [Parameter]
+    public int? FristPublikation { get; set; }
+
+    /// <summary>Meldet jede Änderung an die Seite, damit deren Dirty-Check neu rendert (Speichern-Button).</summary>
+    [Parameter]
+    public EventCallback OnGeaendert { get; set; }
+
+    private bool _expanded;
+
+    private Guid _initialisiertFuer;
+
+    private Task Hinzufuegen() => Geaendert(() => Ausschreibung.Berichtigungen.Add(new Berichtigung { AusId = Ausschreibung.Id }));
+
+    // Beim Wechsel auf eine andere Ausschreibung (Navigation per Verweis-Link) den Aufklappzustand neu bestimmen.
+    protected override void OnParametersSet()
+    {
+        if (Ausschreibung.Id == _initialisiertFuer)
+        {
+            return;
+        }
+
+        _initialisiertFuer = Ausschreibung.Id;
+        _expanded = Ausschreibung.Berichtigungen.Any();
+    }
+
+    private Task Geaendert(Action anwenden)
+    {
+        anwenden();
+        return OnGeaendert.InvokeAsync();
+    }
+}

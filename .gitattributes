@@ -1,0 +1,12 @@
+# Im Repo LF, in der Arbeitskopie CRLF auf jedem Betriebssystem. Git normalisiert beim Vergleich, darum meldet
+# git status reine Zeilenend-Unterschiede nicht als Änderung, auch ohne core.autocrlf (z.B. Git unter Linux).
+* text=auto eol=crlf
+
+# Bash bricht an CRLF ab - Skripte laufen auf dem Linux-Runner direkt aus dem Checkout.
+*.sh text eol=lf
+
+*.dotx binary
+*.ico binary
+*.png binary
+*.woff binary
+*.woff2 binary

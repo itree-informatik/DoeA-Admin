@@ -1,0 +1,1296 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@page "/ausschreibung/{AusId:guid}/loseundofferten"
+@using System.Collections.ObjectModel
+@using DoeA.Components.Pages.Stammdaten
+@using DoeA.Data.Helper
+@using DoeA.Data.Models.DTO
+@using DoeA.Data.Models.DTO.Stammdaten
+@using DoeA.Interfaces.Stammdaten
+@using DoeA.Services
+@using DoeA.Validator
+@using ItreeMud.Models
+@inject ILosService LosService
+@inject IOfferteService OfferteService
+@inject IOffertezustandService OffertezustandService
+@inject IKonfigurationService KonfigurationService
+@inject AusschreibungEditState EditState
+@inject AusschreibungSucheState SucheState
+@inject ConfirmService ConfirmService
+
+@inherits BaseComponent
+@implements IDisposable
+
+@layout AusschreibungLayout
+
+@if (_isLoading)
+{
+    <ItreeSpinner />
+}
+else
+{
+    @* Wiederverwendbares Los-Bearbeiten-Formular (bindet direkt an das Collection-Item; gespeichert wird der ganze Tab). *@
+    RenderFragment losEditForm =
+        @<EditForm EditContext="@_editContextLos">
+            <ItreeFluentValidationValidator Validator="@(new LosValidator(true))" />
+            <div class="box shadow  mt-2 mb-2">
+                @* Raster mit denselben Spaltenbreiten wie die Los-Tabelle (los-spalte-*/los-formular in app.css),
+                   damit jedes Feld unter seiner Spaltenüberschrift steht. *@
+                <div class="los-formular">
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_LOS_BEZEICHNUNG")</label>
+                        <MudTextField T="string"
+                                      Value="@SelectedLos!.Bezeichnung"
+                                      ValueChanged="@(val => { SelectedLos!.Bezeichnung = val; _editContextLos?.Validate(); })"
+                                      Immediate="true"
+                                      Margin="Margin.Dense"
+                                      Placeholder="@TranslationHelper.Translate("AUSSCHREIBUNG_LOS_BEZEICHNUNG_EINGEBEN")" />
+                        <ValidationMessage For="() => SelectedLos!.Bezeichnung" />
+                    </div>
+
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_LOS_ZUSTAND")</label>
+                        @SelectedLos!.Zustand.ToString()
+                    </div>
+
+                    @* Zustellung an den DöA und Abbruchdatum (= Publikation des Abbruchs) wie Eingereicht/Publikation der
+                       Grunddaten; Eingereicht nur mit Abbruchdatum erfassbar. Die Meldungen zu beiden stehen im AnzahlTageFeld. *@
+                    <DatumFeld LabelKey="AUSSCHREIBUNG_EINGEREICHT" @bind-Datum="SelectedLos!.Eingereicht" Enabled="@(SelectedLos!.Abbruchdatum != null)" />
+                    <div class="d-flex flex-column">
+                        <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_LOS_ABBRUCHDATUM")</label>
+                        <ItreeDatePicker TValue="DateOnly?" Value="@SelectedLos!.Abbruchdatum" ValueChanged="@OnAbbruchdatumChanged"
+                                         Clearable="true" Class="datepicker-schmal" />
+                    </div>
+                    @* Spalte «Anzahl Tage» bleibt leer: Die Anzahl steht unter dem Datumspaar (s. app.css). *@
+                    <div></div>
+                    <VerzoegerungFeld @bind-Wert="SelectedLos!.VerzoegerungDurchAuftraggeber" Enabled="@(SelectedLos!.Abbruchdatum != null)" />
+                    <AnzahlTageFeld Eingereicht="@SelectedLos!.Eingereicht" Publikation="@SelectedLos!.Abbruchdatum" Frist="@_fristPublikation"
+                                    MeldungEingereicht="() => SelectedLos!.Eingereicht" MeldungPublikation="() => SelectedLos!.Abbruchdatum" />
+                    @* Kein Schliessen-Button: Zuklappen erfolgt über das Chevron in der Titelzeile. *@
+                    <div class="d-flex flex-column justify-content-end align-items-end gap-2">
+                        @* Abschliessen lädt die Daten neu und würde pendente Änderungen verwerfen ->
+                           Chip nur ohne ungespeicherte Änderungen anbieten. *@
+                        @if (!HasChanges())
+                        {
+                            @* Nur offene Lose dürfen abgeschlossen werden — sonst würde z.B. ein Abbruch überschrieben. *@
+                            <span class="cpv-badge cpv-add-chip d-flex align-items-center text-nowrap @(SelectedLos!.Zustand == EnumLosZustand.Offen ? null : "cpv-chip-disabled")" @onclick="Abschliessen">
+                                <i class="bi bi-check-circle me-1"></i> @TranslationHelper.Translate("AUSSCHREIBUNG_LOS_ABSCHLIESSEN")
+                            </span>
+                        }
+                        <span class="cpv-badge cpv-delete-chip d-flex align-items-center text-nowrap @(!_buttonLoading && Lose.Count > 1 ? null : "cpv-chip-disabled")" @onclick="DeleteLos">
+                            <i class="bi bi-trash me-1"></i> @TranslationHelper.Translate("BUTTON_LOESCHEN")
+                        </span>
+                    </div>
+                </div>
+
+                @* BKP-Nummern werden nur bei Projektart "Bau" verwendet (analog CPV-Nummern der Ausschreibung). *@
+                @if (IstBau)
+                {
+                <div class="cpv-container">
+                    <div class="d-flex align-items-center gap-2 mb-2 cpv-label-button">
+                        <label class="form-label mb-0">@TranslationHelper.Translate("AUSSCHREIBUNG_LOS_BKPNUMMERN")</label>
+                    </div>
+
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        @foreach (var bkp in SelectedLos!.BkpNummern)
+                        {
+                            <span class="cpv-badge d-flex align-items-center">
+                                @bkp.BkpNummer.Bezeichnung | @bkp.BkpNummer.NummerStr
+                                <button type="button" class="btn-close btn-close-small ms-2" aria-label="@TranslationHelper.Translate("BUTTON_LOESCHEN")" @onclick="@(() => RemoveBkpNummer(bkp))"></button>
+                            </span>
+                        }
+
+                        <span class="cpv-badge cpv-add-chip d-flex align-items-center" @onclick="() => _showBkpNummerWindow = true">
+                            <i class="bi bi-plus-circle me-1"></i> @TranslationHelper.Translate("AUSSCHREIBUNG_LOS_BKPNUMMER_HINZUFUEGEN")
+                        </span>
+                    </div>
+                </div>
+                }
+            </div>
+        </EditForm>;
+
+    @* Wiederverwendbares Offerte-Bearbeiten-Formular (bindet direkt an das Collection-Item). *@
+    RenderFragment offerteEditForm =
+        @<EditForm EditContext="@_editContextOfferte">
+            <ItreeFluentValidationValidator Validator="@(new OfferteValidator(true, PublikationOfzIds))" />
+            <div class="box shadow mt-2 mb-2 pa-2">
+                <div class="d-flex justify-content-between mb-2 gap-3">
+                    <div class="d-flex flex-column feld-w-350">
+                        <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_OFFERTE_ANBIETER")</label>
+                        <AnbieterPicker Anbieter="@SelectedOfferte!.Anbieter" OnSelected="OnAnbieterPicked" />
+                        <ValidationMessage For="() => SelectedOfferte!.AnbId" />
+                    </div>
+
+                    <div class="d-flex flex-column feld-w-200">
+                        <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_OFFERTE_ZUSCHLAGSWERT")</label>
+                        <MudNumericField T="decimal" @bind-Value="SelectedOfferte!.ZuschlagswertChf"
+                                         Format="N2" Min="0" Margin="Margin.Dense" />
+                        <ValidationMessage For="() => SelectedOfferte!.ZuschlagswertChf" />
+                    </div>
+
+                    <div class="d-flex flex-column feld-w-160">
+                        <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_OFFERTE_ANZAHLMITARBEITER")</label>
+                        <MudNumericField T="int?" @bind-Value="SelectedOfferte!.AnzahlMitarbeiter"
+                                         Min="0" Margin="Margin.Dense" />
+                    </div>
+
+                    <div class="d-flex flex-column flex-grow-1">
+                        <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_OFFERTE_BEMERKUNG")</label>
+                        <MudTextField T="string" @bind-Value="SelectedOfferte!.Bemerkung"
+                                      Margin="Margin.Dense" />
+                    </div>
+
+                    @* Kein Schliessen-Button: Zuklappen erfolgt über das Chevron in der Titelzeile. *@
+                    <div class="d-flex flex-column justify-content-end">
+                        <span class="cpv-badge cpv-delete-chip d-flex align-items-center text-nowrap @(_buttonLoading ? "cpv-chip-disabled" : null)" @onclick="DeleteOfferte">
+                            <i class="bi bi-trash me-1"></i> @TranslationHelper.Translate("BUTTON_LOESCHEN")
+                        </span>
+                    </div>
+                </div>
+
+                @* Zustände als aufklappbares Grid (Untergruppe der Offerte, analog Lose/Offerten):
+                   Zeile pro Zustand, Klick klappt das Bearbeiten-Formular auf; Zustand und Datum sind
+                   obligatorisch. Der letzte Zustand bleibt in der Offerten-Titelzeile sichtbar. *@
+                <ItreeGrid @ref="_zustandGrid" TItem="OfferteOffertezustand" Data="SelectedOfferte!.Offertenzustaende" Sortable="true"
+                           DetailExpandSingle="true" ShowDetailToggle="false"
+                           OnRowClick="@(args => OnZustandRowClick((OfferteOffertezustand)args.Item))" OnRowRender="ZustandZeilenKlasse">
+                    <GridToolBarTemplate>
+                        <MudText Typo="Typo.subtitle2" Class="mr-2">@TranslationHelper.Translate("AUSSCHREIBUNG_OFFERTE_ZUSTAENDE")</MudText>
+                    </GridToolBarTemplate>
+                    <GridColumns>
+                        @* Context explizit benennen: das Grid liegt im EditForm, dessen ChildContent
+                           bereits den impliziten Namen "context" belegt. *@
+                        <ItreeGridColumn Sortable="false" Filterable="false" HeaderClass="spalte-auswahl">
+                            <Template Context="zustandZelle">
+                                <MudIcon Size="Size.Small"
+                                         Icon="@(_expandedZustandId == zustandZelle.Id ? Icons.Material.Filled.KeyboardArrowDown : Icons.Material.Filled.KeyboardArrowRight)" />
+                            </Template>
+                        </ItreeGridColumn>
+                        <ItreeGridColumn Title="@TranslationHelper.Translate("AUSSCHREIBUNG_OFFERTE_ZUSTAND")" HeaderClass="zustand-spalte-zustand">
+                            <Template Context="zustandZelle">@ZustandBezeichnung(zustandZelle)</Template>
+                        </ItreeGridColumn>
+                        <ItreeGridColumn Field="Eingereicht" Title="@TranslationHelper.Translate("AUSSCHREIBUNG_EINGEREICHT")" HeaderClass="spalte-datum">
+                            <Template Context="zustandZelle">@zustandZelle.Eingereicht?.ToString("dd.MM.yyyy")</Template>
+                        </ItreeGridColumn>
+                        @* Bei Zuständen mit Publikation ist das Datum das Publikationsdatum. *@
+                        <ItreeGridColumn Field="Datum" Title="@TranslationHelper.Translate("AUSSCHREIBUNG_OFFERTE_ZUSTAND_DATUM")" HeaderClass="spalte-datum">
+                            <Template Context="zustandZelle">@zustandZelle.Datum?.ToString("dd.MM.yyyy")</Template>
+                        </ItreeGridColumn>
+                        <ItreeGridColumn Title="@TranslationHelper.Translate("AUSSCHREIBUNG_ANZAHLTAGE")" HeaderClass="spalte-anzahltage">
+                            <Template Context="zustandZelle">
+                                @{
+                                    var dauer = ZustandDauer(zustandZelle);
+                                }
+                                <span class="@(dauer > _fristPublikation ? "mud-error-text" : null)">@dauer</span>
+                            </Template>
+                        </ItreeGridColumn>
+                        @* Letzte Spalte bewusst ohne feste Breite: Sie nimmt den Restplatz auf, sonst verteilt
+                           ihn die Tabelle auf alle Spalten, und das Formular stünde daneben (s. app.css). *@
+                        <ItreeGridColumn Title="@TranslationHelper.Translate("AUSSCHREIBUNG_VERZOEGERUNGDURCHAUFTRAGGEBER")">
+                            <Template Context="zustandZelle">
+                                @if (HatPublikation(zustandZelle))
+                                {
+                                    <JaNeinIcon Wert="zustandZelle.VerzoegerungDurchAuftraggeber" />
+                                }
+                            </Template>
+                        </ItreeGridColumn>
+                    </GridColumns>
+                    <DetailTemplate Context="zustandRow">
+                        @if (SelectedZustand != null && SelectedZustand.Id == zustandRow.Id)
+                        {
+                            <div class="box shadow mt-2 mb-2 pa-2">
+                                @* Raster mit denselben Spaltenbreiten wie die Zustandstabelle (s. app.css). *@
+                                <div class="zustand-formular mb-2">
+                                    <div class="d-flex flex-column">
+                                        <label class="form-label">@TranslationHelper.Translate("AUSSCHREIBUNG_OFFERTE_ZUSTAND")</label>
+                                        <ItreeComboBox TItem="Offertezustand" TValue="Guid?" Data="ZustandAuswahl(SelectedZustand!)" TextField="Bezeichnung" ValueField="Id"
+                                                       Value="@(SelectedZustand!.OfzId == Guid.Empty ? (Guid?)null : SelectedZustand!.OfzId)"
+                                                       ValueChanged="@(val => ZustandGeaendert(SelectedZustand!, val))"
+                                                       DefaultText="@TranslationHelper.Translate("AUSWAEHLEN")" />
+                                        <ValidationMessage For="() => SelectedZustand!.OfzId" />
+                                    </div>
+                                    @* «Eingereicht», Verzögerung und Anzahl Tage nur bei Zuständen mit Publikation (Stammdaten
+                                       Offertezustand); dort ist das Datum das Publikationsdatum. Ohne Publikation halten leere
+                                       Zellen die Spalten der Tabelle. *@
+                                    @if (HatPublikation(SelectedZustand!))
+                                    {
+                                        <DatumFeld LabelKey="AUSSCHREIBUNG_EINGEREICHT" @bind-Datum="SelectedZustand!.Eingereicht" />
+                                    }
+                                    else
+                                    {
+                                        <div></div>
+                                    }
+                                    <div class="d-flex flex-column">
+                                        <label class="form-label">@TranslationHelper.Translate(HatPublikation(SelectedZustand!) ? "AUSSCHREIBUNG_OFFERTE_ZUSTAND_PUBLIZIERT" : "AUSSCHREIBUNG_OFFERTE_ZUSTAND_DATUM")</label>
+                                        <ItreeDatePicker TValue="DateTime?" Value="@SelectedZustand!.Datum"
+                                                         ValueChanged="@((DateTime? val) => { SelectedZustand!.Datum = val; _editContextOfferte?.Validate(); })"
+                                                         Clearable="true" Class="datepicker-schmal" />
+                                        <ValidationMessage For="() => SelectedZustand!.Datum" />
+                                    </div>
+                                    @if (HatPublikation(SelectedZustand!))
+                                    {
+                                        @* Spalte «Anzahl Tage» bleibt leer: Die Anzahl steht unter dem Datumspaar (s. app.css). *@
+                                        <div></div>
+                                        <VerzoegerungFeld @bind-Wert="SelectedZustand!.VerzoegerungDurchAuftraggeber" />
+                                        <AnzahlTageFeld Eingereicht="@SelectedZustand!.Eingereicht" Publikation="@ZustandDatum(SelectedZustand!)" Frist="@_fristPublikation"
+                                                        MeldungEingereicht="() => SelectedZustand!.Eingereicht" />
+                                    }
+                                    @* Kein Schliessen-Button: Zuklappen erfolgt über das Chevron in der Titelzeile. *@
+                                    <div class="d-flex flex-column justify-content-end align-items-end">
+                                        <span class="cpv-badge cpv-delete-chip d-flex align-items-center text-nowrap @(_buttonLoading ? "cpv-chip-disabled" : null)" @onclick="@(() => RemoveZustand(SelectedZustand!))">
+                                            <i class="bi bi-trash me-1"></i> @TranslationHelper.Translate("BUTTON_LOESCHEN")
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </DetailTemplate>
+                </ItreeGrid>
+                <div class="d-flex mt-2">
+                    <span class="cpv-badge cpv-add-chip d-flex align-items-center" @onclick="AddZustand">
+                        <i class="bi bi-plus-circle me-1"></i> @TranslationHelper.Translate("AUSSCHREIBUNG_OFFERTE_ZUSTAND_HINZUFUEGEN")
+                    </span>
+                </div>
+            </div>
+        </EditForm>;
+
+    <div class="d-flex flex-row align-items-center gap-4 mb-3 mt-3 feld-w-300">
+        <label class="form-label mb-0">@TranslationHelper.Translate("AUSSCHREIBUNG_PFLICHTENHEFTER")</label>
+        <MudNumericField T="int" Class="feld-w-60" Min="0" @bind-Value="Ausschreibung!.Pflichtenhefter" />
+    </div>
+
+    <ItreeGrid @ref="_losGrid" TItem="Los" Data="Lose" Sortable="true" FilterMode="ItreeGridFilterMode.FilterMenu"
+               DetailExpandSingle="true" ShowDetailToggle="false"
+               OnRowClick="@(args => OnLosRowClick((Los)args.Item))" OnRowRender="LosZeilenKlasse">
+        <GridToolBarTemplate>
+            @* Hinzufügen/Löschen/Abschliessen laufen über den Chip unterhalb des Grids bzw. die
+               Aktionen im Bearbeiten-Formular (analog Berichtigungen). *@
+            <MudText Typo="Typo.subtitle2" Class="mr-2">@TranslationHelper.Translate("AUSSCHREIBUNG_LOS")</MudText>
+        </GridToolBarTemplate>
+        <GridColumns>
+            <ItreeGridColumn Sortable="false" Filterable="false" HeaderClass="spalte-auswahl">
+                <Template>
+                    <MudIcon Size="Size.Small"
+                             Icon="@(_expandedLosId == context.Id ? Icons.Material.Filled.KeyboardArrowDown : Icons.Material.Filled.KeyboardArrowRight)" />
+                </Template>
+            </ItreeGridColumn>
+            <ItreeGridColumn Field="Bezeichnung" Title="@TranslationHelper.Translate("AUSSCHREIBUNG_LOS_BEZEICHNUNG")" HeaderClass="los-spalte-bezeichnung" />
+            <ItreeGridColumn Field="Zustand" Title="@TranslationHelper.Translate("AUSSCHREIBUNG_LOS_ZUSTAND")" HeaderClass="los-spalte-zustand" />
+            <ItreeGridColumn Field="Eingereicht" Title="@TranslationHelper.Translate("AUSSCHREIBUNG_EINGEREICHT")" HeaderClass="spalte-datum" />
+            <ItreeGridColumn Field="Abbruchdatum" Title="@TranslationHelper.Translate("AUSSCHREIBUNG_LOS_ABBRUCHDATUM")" HeaderClass="spalte-datum" />
+            <ItreeGridColumn Title="@TranslationHelper.Translate("AUSSCHREIBUNG_ANZAHLTAGE")" HeaderClass="spalte-anzahltage">
+                <Template>
+                    @{
+                        var dauer = ArbeitstageHelper.PublikationsDauer(context.Eingereicht, context.Abbruchdatum);
+                    }
+                    <span class="@(dauer > _fristPublikation ? "mud-error-text" : null)">@dauer</span>
+                </Template>
+            </ItreeGridColumn>
+            <ItreeGridColumn Field="VerzoegerungDurchAuftraggeber" Title="@TranslationHelper.Translate("AUSSCHREIBUNG_VERZOEGERUNGDURCHAUFTRAGGEBER")" HeaderClass="spalte-verzoegerung" Filterable="false">
+                <Template>
+                    <JaNeinIcon Wert="context.VerzoegerungDurchAuftraggeber" />
+                </Template>
+            </ItreeGridColumn>
+            <ItreeGridColumn Title="@TranslationHelper.Translate("AUSSCHREIBUNG_LOS_OFFERTEN")">
+                <Template>
+                    @context.Offerten.Count
+                </Template>
+            </ItreeGridColumn>
+        </GridColumns>
+        <DetailTemplate Context="los">
+            <div class="box shadow mt-2 mb-2 pa-2">
+                @if (SelectedLos != null && SelectedLos.Id == los.Id)
+                {
+                    @losEditForm
+                }
+
+                <ItreeGrid @ref="_offerteGrid" TItem="Offerte" Data="los.Offerten" Sortable="true"
+                           DetailExpandSingle="true" ShowDetailToggle="false"
+                           OnRowClick="@(args => OnOfferteRowClick(los, (Offerte)args.Item))" OnRowRender="OfferteZeilenKlasse">
+                    <GridToolBarTemplate>
+                        <MudText Typo="Typo.subtitle2" Class="mr-2">@TranslationHelper.Translate("AUSSCHREIBUNG_OFFERTEN")</MudText>
+                    </GridToolBarTemplate>
+                    <GridColumns>
+                        <ItreeGridColumn Sortable="false" Filterable="false" HeaderClass="spalte-auswahl">
+                            <Template Context="offerte">
+                                <MudIcon Size="Size.Small"
+                                         Icon="@(_expandedOfferteId == offerte.Id ? Icons.Material.Filled.KeyboardArrowDown : Icons.Material.Filled.KeyboardArrowRight)" />
+                            </Template>
+                        </ItreeGridColumn>
+                        <ItreeGridColumn Field="Anbieter.Name" Title="@TranslationHelper.Translate("AUSSCHREIBUNG_OFFERTE_ANBIETER")" />
+                        <ItreeGridColumn Field="ZuschlagswertChf" Title="@TranslationHelper.Translate("AUSSCHREIBUNG_OFFERTE_ZUSCHLAGSWERT")" DisplayFormat="{0:N2}" />
+                        <ItreeGridColumn Field="AnzahlMitarbeiter" Title="@TranslationHelper.Translate("AUSSCHREIBUNG_OFFERTE_ANZAHLMITARBEITER")" />
+                        <ItreeGridColumn Field="Bemerkung" Title="@TranslationHelper.Translate("AUSSCHREIBUNG_OFFERTE_BEMERKUNG")" />
+                        <ItreeGridColumn Title="@TranslationHelper.Translate("AUSSCHREIBUNG_OFFERTE_ZUSTAND")">
+                            <Template Context="offerte">@LetzterZustandKurzbezeichnung(offerte)</Template>
+                        </ItreeGridColumn>
+                    </GridColumns>
+                    <DetailTemplate Context="offerte">
+                        @if (SelectedOfferte != null && SelectedOfferte.Id == offerte.Id)
+                        {
+                            @offerteEditForm
+                        }
+                    </DetailTemplate>
+                </ItreeGrid>
+                @* Freihändig (Zuschlagsempfänger): genau eine Offerte pro Los erlaubt -> Chip ausblenden. *@
+                @if (!(IstZuschlagsempfaenger && los.Offerten.Count >= 1))
+                {
+                    <div class="d-flex mt-2">
+                        <span class="cpv-badge cpv-add-chip d-flex align-items-center" @onclick="() => OnAddOfferte(los)">
+                            <i class="bi bi-plus-circle me-1"></i> @TranslationHelper.Translate("AUSSCHREIBUNG_OFFERTE_HINZUFUEGEN")
+                        </span>
+                    </div>
+                }
+            </div>
+        </DetailTemplate>
+    </ItreeGrid>
+
+    <div class="d-flex mt-3">
+        <span class="cpv-badge cpv-add-chip d-flex align-items-center" @onclick="OnAddLos">
+            <i class="bi bi-plus-circle me-1"></i> @TranslationHelper.Translate("AUSSCHREIBUNG_LOS_HINZUFUEGEN")
+        </span>
+    </div>
+
+    <ItreeButtonGroup Position="EnumButtonGroupPosition.Rechts" CustomClass="buttongroup-vollbreit mt-4">
+        <ItreeButton Type="EnumButton.Speichern" OnClick="Save"
+                     Enabled="@(HasChanges() && !_buttonLoading)" SpinnerIsLoading="@_buttonLoading" />
+    </ItreeButtonGroup>
+
+    @if (_showBkpNummerWindow && SelectedLos != null)
+    {
+        <ItreeWindow @bind-Visible="_showBkpNummerWindow" MaxWidth="MaxWidth.Large">
+            <WindowTitle>
+                <strong><ItreeTranslation Key="AUSSCHREIBUNG_LOS_BKPNUMMER_AUSWAEHLEN" /></strong>
+            </WindowTitle>
+            <WindowContent>
+                <BkpNummerSeite OnSelect="OnBkpNummerSelect" ExcludeIds="@SelectedLos.BkpNummern.Select(b => b.BkpId)" />
+            </WindowContent>
+            <WindowFooter>
+                <ItreeButton Type="EnumButton.Schliessen" OnClick="@(() => _showBkpNummerWindow = false)" />
+            </WindowFooter>
+        </ItreeWindow>
+    }
+}
+
+@code {
+    /// <summary>Id der Ausschreibung aus der Route; bestimmt, welche Lose geladen werden.</summary>
+    [Parameter]
+    public Guid AusId { get; set; }
+
+    /// <summary>Vom Layout geteilte Ausschreibung (liefert Verfahrensart, Projektart und Pflichtenhefter).</summary>
+    [CascadingParameter]
+    public Ausschreibung? Ausschreibung { get; set; }
+
+    private const string NaturalIdZuschlagPraequali = "zuschlagpraequali";
+
+    private bool _buttonLoading;
+    private bool _isLoading = true;
+    private bool _showBkpNummerWindow;
+
+    // Löst nach dem nächsten Render eine Validierung der offenen Edit-Form(en) aus (Inline-Hinweise).
+    private bool _validatePending;
+
+    // Frist aus der Konfiguration, ab der «Anzahl Tage» rot erscheint (null, wenn nicht konfiguriert).
+    private int? _fristPublikation;
+
+    // Ausschreibungs-Feld "Pflichtenhefter" gehört ebenfalls zum Tab-Inhalt.
+    private int _origPflichtenhefter;
+
+    private Guid? _expandedLosId;
+    private Guid? _expandedOfferteId;
+    private Guid? _expandedZustandId;
+
+    // Nach dem Aufklappen der Offerte einen ungültigen Zustand aufklappen (Grid existiert erst nach dem Render).
+    private Guid? _pendingExpandZustandId;
+
+    // Nach dem Speichern (Neuladen) das zuvor aufgeklappte Los wiederherstellen (Offerten bleiben zu).
+    private Guid? _pendingRestoreLosId;
+
+    private EditContext? _editContextLos;
+    private EditContext? _editContextOfferte;
+
+    // Snapshot des gesamten Tab-Inhalts (Lose -> Offerten -> Zustände) zur Erkennung pendenter Änderungen.
+    private List<Los> _original = new();
+
+    private ItreeGrid<Los>? _losGrid;
+    private ItreeGrid<Offerte>? _offerteGrid;
+    private ItreeGrid<OfferteOffertezustand>? _zustandGrid;
+
+    private List<Offertezustand> Offertezustaende { get; set; } = new();
+    private ObservableCollection<Los> Lose { get; set; } = new();
+
+    private Los? SelectedLos { get; set; }
+    private Offerte? SelectedOfferte { get; set; }
+    private OfferteOffertezustand? SelectedZustand { get; set; }
+
+    // BKP-Nummern werden nur bei Projektart "Bau" verwendet.
+    private bool IstBau => string.Equals(Ausschreibung?.Projektart?.NaturalId, "Bau", StringComparison.OrdinalIgnoreCase);
+
+    // Freihändig: Los wird als "Zuschlagsempfänger" geführt und darf genau eine Offerte haben.
+    private bool IstZuschlagsempfaenger => VerfahrensartRegeln.IstZuschlagsempfaengerModus(Ausschreibung?.Verfahrensart?.NaturalId);
+
+    private string LosTitelKey => VerfahrensartRegeln.LosTitelKey(Ausschreibung?.Verfahrensart?.NaturalId);
+
+    // Nur die für die Verfahrensart wählbaren Offertezustände anbieten (Präquali-Zustände nur bei Selektiv).
+    // Die ungefilterte Liste bleibt für die Anzeige bestehender Zustände (z.B. Kurzbezeichnung) massgebend.
+    private IEnumerable<Offertezustand> OffertezustaendeAuswahl =>
+        Offertezustaende.Where(z => VerfahrensartRegeln.IstOffertezustandWaehlbar(Ausschreibung?.Verfahrensart?.NaturalId, z.NaturalId));
+
+    private void LosZeilenKlasse(ItreeGridRowRenderEventArgs args) =>
+        args.Class = SelectedLos?.Id == ((Los)args.Item).Id ? "row-selected" : null;
+
+    private void OfferteZeilenKlasse(ItreeGridRowRenderEventArgs args) =>
+        args.Class = SelectedOfferte?.Id == ((Offerte)args.Item).Id ? "row-selected" : null;
+
+    private void ZustandZeilenKlasse(ItreeGridRowRenderEventArgs args) =>
+        args.Class = SelectedZustand?.Id == ((OfferteOffertezustand)args.Item).Id ? "row-selected" : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadLose();
+        Offertezustaende = (await OffertezustandService.GetAll()).Alphabetisch(z => z.Bezeichnung);
+        _fristPublikation = (await KonfigurationService.GetAll())?
+            .FirstOrDefault(k => k.NaturalId == GeneralConstants.KonfigurationFristPublikation)?.WertInt;
+        SnapshotOriginal();
+        EditState.Register(HasChanges);
+        _isLoading = false;
+        StateHasChanged();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (_validatePending)
+        {
+            // Jetzt sind die Validatoren der gerenderten Edit-Formulare am EditContext angemeldet.
+            _validatePending = false;
+            _editContextLos?.Validate();
+            _editContextOfferte?.Validate();
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Stellt nach dem Speichern (Neuladen der Daten) das zuvor aufgeklappte Los wieder her,
+    /// sobald das Grid mit den neuen Items gerendert wurde. Offerten bleiben bewusst zugeklappt.
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Ein ungültiger Zustand kann erst aufgeklappt werden, wenn das Zustände-Grid der
+        // (soeben aufgeklappten) Offerte gerendert ist.
+        if (_pendingExpandZustandId != null && _zustandGrid != null && SelectedOfferte != null)
+        {
+            var zustand = SelectedOfferte.Offertenzustaende.FirstOrDefault(z => z.Id == _pendingExpandZustandId.Value);
+            _pendingExpandZustandId = null;
+            if (zustand != null)
+            {
+                await _zustandGrid.CollapseAllDetailsAsync();
+                await _zustandGrid.ToggleDetailAsync(zustand);
+                _expandedZustandId = zustand.Id;
+                SelectedZustand = zustand;
+                _validatePending = true;
+                StateHasChanged();
+            }
+        }
+
+        if (_pendingRestoreLosId == null)
+        {
+            return;
+        }
+
+        var losId = _pendingRestoreLosId;
+        // Vor dem Aufklappen zurücksetzen, damit der durch ExpandLos ausgelöste
+        // Re-Render diese Wiederherstellung nicht erneut anstösst.
+        _pendingRestoreLosId = null;
+
+        var los = losId.HasValue ? Lose.FirstOrDefault(l => l.Id == losId.Value) : null;
+        if (los == null)
+        {
+            return;
+        }
+
+        await ExpandLos(los);
+    }
+
+    /// <summary>Lädt Lose samt Offerten/Zuständen neu und setzt die Auswahl zurück.</summary>
+    private async Task ReloadLose()
+    {
+        Lose = await LosService.Load(AusId);
+        foreach (var los in Lose)
+        {
+            los.Offerten = await OfferteService.Load(los.Id);
+        }
+
+        SelectedLos = null;
+        SelectedOfferte = null;
+        SelectedZustand = null;
+        _expandedLosId = null;
+        _expandedOfferteId = null;
+        _expandedZustandId = null;
+        _editContextLos = null;
+        _editContextOfferte = null;
+    }
+
+    private void SnapshotOriginal()
+    {
+        _original = Lose.Select(l => l.Clone()!).ToList();
+        _origPflichtenhefter = Ausschreibung?.Pflichtenhefter ?? 0;
+    }
+
+    /// <summary>Pendente Änderungen im gesamten Tab (Lose, Offerten und deren Zustände).</summary>
+    private bool HasChanges()
+    {
+        if ((Ausschreibung?.Pflichtenhefter ?? 0) != _origPflichtenhefter)
+        {
+            return true;
+        }
+
+        if (_original.Count != Lose.Count)
+        {
+            return true;
+        }
+
+        var origLosById = _original.ToDictionary(l => l.Id);
+        foreach (var los in Lose)
+        {
+            if (!origLosById.TryGetValue(los.Id, out var origLos))
+                return true;
+            if (!los.IsEqual(origLos, "Offerten,BkpNummern"))
+            {
+                return true;
+            }
+            if (OffertenChanged(los.Offerten, origLos.Offerten))
+            {
+                return true;
+            }
+            if (BkpNummernChanged(los.BkpNummern, origLos.BkpNummern))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>Vergleich über die Menge der zugeordneten BkpIds (analog CPV-Nummern der Ausschreibung).</summary>
+    private bool BkpNummernChanged(List<LosBkpNummer> current, List<LosBkpNummer> orig)
+    {
+        if (current.Count != orig.Count)
+        {
+            return true;
+        }
+
+        var origIds = new HashSet<Guid>(orig.Select(b => b.BkpId));
+        return current.Any(b => !origIds.Contains(b.BkpId));
+    }
+
+    private bool OffertenChanged(List<Offerte> current, List<Offerte> orig)
+    {
+        if (current.Count != orig.Count)
+        {
+            return true;
+        }
+
+        var origById = orig.ToDictionary(o => o.Id);
+        foreach (var offerte in current)
+        {
+            if (!origById.TryGetValue(offerte.Id, out var origOfferte))
+                return true;
+            if (!offerte.IsEqual(origOfferte, "Anbieter,Offertenzustaende"))
+            {
+                return true;
+            }
+            if (ZustaendeChanged(offerte.Offertenzustaende, origOfferte.Offertenzustaende))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private bool ZustaendeChanged(List<OfferteOffertezustand> current, List<OfferteOffertezustand> orig)
+    {
+        if (current.Count != orig.Count)
+        {
+            return true;
+        }
+
+        var origById = orig.ToDictionary(z => z.Id);
+        foreach (var zustand in current)
+        {
+            if (!origById.TryGetValue(zustand.Id, out var origZustand))
+                return true;
+            if (!zustand.IsEqual(origZustand))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private async Task OnLosRowClick(Los item)
+    {
+        if (item == null || _losGrid == null)
+        {
+            return;
+        }
+
+        // Beim Verlassen der aktuellen Auswahl (Wechsel oder Zuklappen) einen ungültigen, noch nie
+        // gespeicherten Eintrag nicht als Phantom-Zeile zurücklassen.
+        VerwerfeUngueltigenNeuenZustand();
+        VerwerfeUngueltigeNeueOfferte();
+        VerwerfeUngueltigesNeuesLos();
+
+        if (_expandedLosId == item.Id)
+        {
+            // bereits offene Zeile wieder zuklappen
+            await _losGrid.CollapseAllDetailsAsync();
+            _expandedLosId = null;
+            SelectedLos = null;
+            SelectedOfferte = null;
+            SelectedZustand = null;
+            _expandedOfferteId = null;
+            _expandedZustandId = null;
+            _editContextLos = null;
+        }
+        else
+        {
+            await _losGrid.CollapseAllDetailsAsync();
+            await _losGrid.ToggleDetailAsync(item);
+            _expandedLosId = item.Id;
+            SelectedOfferte = null;
+            SelectedZustand = null;
+            _expandedOfferteId = null;
+            _expandedZustandId = null;
+            SelectLos(item);
+        }
+        StateHasChanged();
+    }
+
+    private async Task OnAddLos()
+    {
+        // Zuerst einen allfällig ungültigen Eintrag anzeigen statt weitere leere Zeilen zu erzeugen.
+        if (await ZeigeUngueltigenEintragFalls())
+        {
+            return;
+        }
+
+        if (_losGrid != null)
+            await _losGrid.CollapseAllDetailsAsync();
+        _expandedOfferteId = null;
+        SelectedOfferte = null;
+        SelectedZustand = null;
+        _expandedZustandId = null;
+
+        // Guid sofort vergeben, damit neue Untereinträge (Offerten/Zustände) bereits im Speicher darauf verweisen können.
+        var los = new Los
+        {
+            Id = Guid.NewGuid(),
+            AusId = Ausschreibung!.Id,
+            Zustand = EnumLosZustand.Offen,
+            Aktiv = true,
+            Offerten = new()
+        };
+        Lose.Add(los);
+        SelectLos(los);
+
+        if (_losGrid != null)
+        {
+            await _losGrid.ToggleDetailAsync(los);
+            _expandedLosId = los.Id;
+        }
+        // Pflichtfeld-Hinweise nach dem Render anzeigen (Validator abonniert den EditContext erst beim Rendern).
+        _validatePending = true;
+        StateHasChanged();
+    }
+
+    private void SelectLos(Los? model)
+    {
+        if (model == null)
+        {
+            return;
+        }
+
+        // Direkte Referenz: Änderungen wirken sofort in der Collection (gespeichert wird der ganze Tab).
+        SelectedLos = model;
+        _editContextLos = new(SelectedLos!);
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Übernimmt das Abbruchdatum und spiegelt den Los-Zustand: gesetztes Datum => "Abgebrochen".
+    /// Wird das Datum entfernt, wird nur der zuvor gesetzte Abbruch-Zustand zurückgenommen (ein
+    /// Abschluss bleibt erhalten), und Eingereicht und Verzögerung des Abbruchs werden geleert.
+    /// Die massgebliche Festlegung erfolgt zusätzlich serverseitig in SaveTab.
+    /// </summary>
+    private void OnAbbruchdatumChanged(DateOnly? val)
+    {
+        if (SelectedLos == null)
+        {
+            return;
+        }
+
+        if (val.HasValue)
+        {
+            SelectedLos.Abbruchdatum = val;
+            SelectedLos.Zustand = EnumLosZustand.Abgebrochen;
+        }
+        else
+        {
+            SelectedLos.Abbruchdatum = null;
+            SelectedLos.Eingereicht = null;
+            SelectedLos.VerzoegerungDurchAuftraggeber = false;
+            if (SelectedLos.Zustand == EnumLosZustand.Abgebrochen)
+                SelectedLos.Zustand = EnumLosZustand.Offen;
+        }
+
+        _editContextLos?.Validate();
+    }
+
+    /// <summary>Entfernt das ausgewählte Los, wenn es neu (noch nicht gespeichert) und ungültig ist.</summary>
+    private void VerwerfeUngueltigesNeuesLos()
+    {
+        if (SelectedLos == null)
+        {
+            return;
+        }
+
+        var istNeu = _original.All(l => l.Id != SelectedLos.Id);
+        var istUngueltig = !new LosValidator(true).Validate(SelectedLos).IsValid;
+        if (istNeu && istUngueltig)
+        {
+            Lose.Remove(SelectedLos);
+        }
+    }
+
+    /// <summary>Entfernt die ausgewählte Offerte, wenn sie neu (noch nicht gespeichert) und ungültig ist.</summary>
+    private void VerwerfeUngueltigeNeueOfferte()
+    {
+        if (SelectedOfferte == null)
+        {
+            return;
+        }
+
+        var istNeu = _original.SelectMany(l => l.Offerten).All(o => o.Id != SelectedOfferte.Id);
+        var istUngueltig = !new OfferteValidator(true, PublikationOfzIds).Validate(SelectedOfferte).IsValid;
+        if (istNeu && istUngueltig)
+        {
+            Lose.FirstOrDefault(l => l.Id == SelectedOfferte.LosId)?.Offerten.RemoveAll(o => o.Id == SelectedOfferte.Id);
+        }
+    }
+
+    private async Task OnOfferteRowClick(Los los, Offerte item)
+    {
+        if (item == null || _offerteGrid == null)
+        {
+            return;
+        }
+
+        // Beim Verlassen der aktuellen Offerte (Wechsel oder Zuklappen) einen ungültigen, noch nie
+        // gespeicherten Eintrag nicht als Phantom-Zeile zurücklassen.
+        VerwerfeUngueltigenNeuenZustand();
+        VerwerfeUngueltigeNeueOfferte();
+
+        if (_expandedOfferteId == item.Id)
+        {
+            await _offerteGrid.CollapseAllDetailsAsync();
+            _expandedOfferteId = null;
+            SelectedOfferte = null;
+            SelectedZustand = null;
+            _expandedZustandId = null;
+            _editContextOfferte = null;
+        }
+        else
+        {
+            await _offerteGrid.CollapseAllDetailsAsync();
+            await _offerteGrid.ToggleDetailAsync(item);
+            _expandedOfferteId = item.Id;
+            SelectedZustand = null;
+            _expandedZustandId = null;
+            SelectOfferte(item);
+        }
+        StateHasChanged();
+    }
+
+    private async Task OnAddOfferte(Los los)
+    {
+        // Freihändig (Zuschlagsempfänger): genau eine Offerte pro Los erlaubt (Chip ist dann ausgeblendet).
+        if (IstZuschlagsempfaenger && los.Offerten.Count >= 1)
+        {
+            return;
+        }
+
+        // Zuerst einen allfällig ungültigen Eintrag anzeigen statt weitere leere Zeilen zu erzeugen.
+        if (await ZeigeUngueltigenEintragFalls())
+        {
+            return;
+        }
+
+        if (_offerteGrid != null)
+            await _offerteGrid.CollapseAllDetailsAsync();
+        _expandedOfferteId = null;
+        SelectedZustand = null;
+        _expandedZustandId = null;
+
+        var offerte = new Offerte
+        {
+            Id = Guid.NewGuid(),
+            LosId = los.Id,
+            Aktiv = true,
+            Anbieter = new Anbieter()
+        };
+        los.Offerten.Add(offerte);
+        SelectOfferte(offerte);
+
+        if (_offerteGrid != null)
+        {
+            await _offerteGrid.ToggleDetailAsync(offerte);
+            _expandedOfferteId = offerte.Id;
+        }
+        // Pflichtfeld-Hinweise nach dem Render anzeigen.
+        _validatePending = true;
+        StateHasChanged();
+    }
+
+    private void SelectOfferte(Offerte? model)
+    {
+        if (model == null)
+        {
+            return;
+        }
+
+        SelectedOfferte = model;
+        _editContextOfferte = new(SelectedOfferte!);
+        StateHasChanged();
+    }
+
+    /// <summary>Kurzbezeichnung des jüngsten Offertenzustands, aufgelöst über die OfzId aus der geladenen Offertezustand-Stammliste.</summary>
+    private string LetzterZustandKurzbezeichnung(Offerte offerte)
+    {
+        var letzter = offerte.LetzterZustand();
+        if (letzter == null)
+        {
+            return string.Empty;
+        }
+
+        return Offertezustaende.FirstOrDefault(o => o.Id == letzter.OfzId)?.Kurzbezeichnung ?? string.Empty;
+    }
+
+    private async Task OnAnbieterPicked(Anbieter anbieter)
+    {
+        if (SelectedOfferte == null)
+        {
+            return;
+        }
+
+        // Ein Anbieter darf pro Los nur eine Offerte haben -> Duplikat abweisen (serverseitig zusätzlich abgesichert).
+        var los = Lose.FirstOrDefault(l => l.Id == SelectedOfferte.LosId);
+        if (los != null && los.Offerten.Any(o => o.Id != SelectedOfferte.Id && o.AnbId == anbieter.Id))
+        {
+            await ErrorHandler.HandleAsync(() => throw new InvalidOperationException("ERROR_AUSSCHREIBUNG_OFFERTE_ANBIETER_DOPPELT"));
+            return;
+        }
+
+        SelectedOfferte.AnbId = anbieter.Id;
+        SelectedOfferte.Anbieter = anbieter;
+        // EditContext wird vom Picker nicht notifiziert -> Inline-Meldungen explizit aktualisieren.
+        _editContextOfferte?.Validate();
+        StateHasChanged();
+    }
+
+    private async Task AddZustand()
+    {
+        if (SelectedOfferte == null)
+        {
+            return;
+        }
+
+        // Einen bereits offenen, ungültigen neuen Zustand nicht als Phantom-Zeile zurücklassen.
+        VerwerfeUngueltigenNeuenZustand();
+
+        // Guid sofort vergeben, damit die Zeile im Grid identifizierbar ist (analog Los/Offerte).
+        var zustand = new OfferteOffertezustand
+        {
+            Id = Guid.NewGuid(),
+            OffId = SelectedOfferte.Id,
+            Aktiv = true
+        };
+        SelectedOfferte.Offertenzustaende.Add(zustand);
+        SelectedZustand = zustand;
+
+        if (_zustandGrid != null)
+        {
+            await _zustandGrid.CollapseAllDetailsAsync();
+            await _zustandGrid.ToggleDetailAsync(zustand);
+            _expandedZustandId = zustand.Id;
+        }
+        // Pflichtfeld-Hinweise nach dem Render anzeigen.
+        _validatePending = true;
+        StateHasChanged();
+    }
+
+    private async Task OnZustandRowClick(OfferteOffertezustand item)
+    {
+        if (item == null || _zustandGrid == null)
+        {
+            return;
+        }
+
+        // Beim Verlassen der aktuellen Auswahl (Wechsel oder Zuklappen) einen ungültigen, noch nie
+        // gespeicherten Zustand nicht als Phantom-Zeile zurücklassen (analog Los/Offerte).
+        VerwerfeUngueltigenNeuenZustand();
+
+        if (_expandedZustandId == item.Id)
+        {
+            await _zustandGrid.CollapseAllDetailsAsync();
+            _expandedZustandId = null;
+            SelectedZustand = null;
+        }
+        else
+        {
+            await _zustandGrid.CollapseAllDetailsAsync();
+            await _zustandGrid.ToggleDetailAsync(item);
+            _expandedZustandId = item.Id;
+            SelectedZustand = item;
+        }
+        StateHasChanged();
+    }
+
+    /// <summary>Entfernt den ausgewählten Zustand, wenn er neu (noch nicht gespeichert) und ungültig ist.</summary>
+    private void VerwerfeUngueltigenNeuenZustand()
+    {
+        if (SelectedZustand == null || SelectedOfferte == null)
+        {
+            return;
+        }
+
+        var istNeu = _original.SelectMany(l => l.Offerten).SelectMany(o => o.Offertenzustaende)
+            .All(z => z.Id != SelectedZustand.Id);
+        var istUngueltig = !new OfferteOffertezustandValidator(true, PublikationOfzIds).Validate(SelectedZustand).IsValid;
+        if (istNeu && istUngueltig)
+        {
+            SelectedOfferte.Offertenzustaende.RemoveAll(z => z.Id == SelectedZustand.Id);
+            SelectedZustand = null;
+            _expandedZustandId = null;
+        }
+    }
+
+    /// <summary>Übernimmt die Auswahl aus dem Zustand-Dropdown (inkl. Bezeichnung für die Anzeige).</summary>
+    private void ZustandGeaendert(OfferteOffertezustand zustand, Guid? ofzId)
+    {
+        if (ofzId is not { } id || id == Guid.Empty)
+        {
+            return;
+        }
+
+        var ofz = Offertezustaende.Single(o => o.Id == id);
+        zustand.OfzId = ofz.Id;
+        zustand.Bezeichnung = ofz.Bezeichnung;
+
+        // Ohne Publikation wären die Felder ausgeblendet, aber ein alter Wert würde trotzdem gespeichert.
+        if (!ofz.Publikation)
+        {
+            zustand.Eingereicht = null;
+            zustand.VerzoegerungDurchAuftraggeber = false;
+        }
+
+        // Die Präqualifikation ist eine Publikation pro Ausschreibung (Speichern prüft gleiche Daten): Daten eines bereits
+        // erfassten Zuschlags Präqualifikation übernehmen.
+        if (ofz.NaturalId == NaturalIdZuschlagPraequali)
+        {
+            var vorlage = Lose.SelectMany(l => l.Offerten).SelectMany(o => o.Offertenzustaende)
+                .FirstOrDefault(z => z != zustand && z.OfzId == ofz.Id);
+            if (vorlage != null)
+            {
+                zustand.Eingereicht = vorlage.Eingereicht;
+                zustand.Datum = vorlage.Datum;
+                zustand.VerzoegerungDurchAuftraggeber = vorlage.VerzoegerungDurchAuftraggeber;
+            }
+        }
+
+        _editContextOfferte?.Validate();
+    }
+
+    private static DateOnly? ZustandDatum(OfferteOffertezustand zustand) =>
+        zustand.Datum.HasValue ? DateOnly.FromDateTime(zustand.Datum.Value) : null;
+
+    // Bei Zuständen mit Publikation ist das Datum das Publikationsdatum.
+    private int? ZustandDauer(OfferteOffertezustand zustand) =>
+        HatPublikation(zustand) ? ArbeitstageHelper.PublikationsDauer(zustand.Eingereicht, ZustandDatum(zustand)) : null;
+
+    /// <summary>Ob auf den Zustand eine Publikation folgt (Flag in den Stammdaten Offertezustand).</summary>
+    private bool HatPublikation(OfferteOffertezustand zustand) =>
+        Offertezustaende.FirstOrDefault(o => o.Id == zustand.OfzId)?.Publikation == true;
+
+    // Zustände mit Publikation: Nur bei ihnen ist «Eingereicht» Pflicht (Validatoren der Offerte und des Zustands).
+    private IReadOnlySet<Guid> PublikationOfzIds => Offertezustaende.Where(o => o.Publikation).Select(o => o.Id).ToHashSet();
+
+    /// <summary>
+    /// Auswahlliste je Zustand: die für die Verfahrensart wählbaren Zustände, plus den aktuell
+    /// gespeicherten Wert — auch wenn er gefiltert wäre —, damit MudSelect die Bezeichnung
+    /// statt der GUID anzeigt (analog LeistungsartenGefiltert der Grunddaten).
+    /// </summary>
+    private IEnumerable<Offertezustand> ZustandAuswahl(OfferteOffertezustand zustand)
+    {
+        var auswahl = OffertezustaendeAuswahl;
+        if (zustand.OfzId != Guid.Empty && auswahl.All(z => z.Id != zustand.OfzId))
+        {
+            var gespeichert = Offertezustaende.FirstOrDefault(z => z.Id == zustand.OfzId);
+            if (gespeichert != null)
+            {
+                return auswahl.Append(gespeichert).Alphabetisch(z => z.Bezeichnung);
+            }
+        }
+        return auswahl;
+    }
+
+    /// <summary>Bezeichnung für die Zustand-Titelzeile (über die OfzId aus den Stammdaten aufgelöst).</summary>
+    private string ZustandBezeichnung(OfferteOffertezustand zustand) =>
+        Offertezustaende.FirstOrDefault(o => o.Id == zustand.OfzId)?.Bezeichnung ?? zustand.Bezeichnung;
+
+    /// <summary>Ordnet dem ausgewählten Los eine BKP-Nummer zu (nur im Speicher; persistiert wird erst beim Speichern).</summary>
+    private void OnBkpNummerSelect(BkpNummer bkpNummer)
+    {
+        if (SelectedLos == null)
+        {
+            return;
+        }
+
+        if (SelectedLos.BkpNummern.Any(b => b.BkpId == bkpNummer.Id))
+        {
+            return;
+        }
+
+        SelectedLos.BkpNummern.Add(new LosBkpNummer
+        {
+            LosId = SelectedLos.Id,
+            BkpId = bkpNummer.Id,
+            BkpNummer = bkpNummer
+        });
+        StateHasChanged();
+    }
+
+    /// <summary>Entfernt eine BKP-Zuordnung nur im Speicher; persistiert wird erst beim Speichern.</summary>
+    private void RemoveBkpNummer(LosBkpNummer bkp)
+    {
+        if (SelectedLos == null)
+        {
+            return;
+        }
+
+        // Vor dem Entfernen einen Hinweis anzeigen.
+        ConfirmService.ShowDeleteConfirm(async confirmed =>
+        {
+            if (confirmed)
+            {
+                SelectedLos?.BkpNummern.Remove(bkp);
+            }
+            await InvokeAsync(StateHasChanged);
+        });
+    }
+
+    private void RemoveZustand(OfferteOffertezustand zustand)
+    {
+        if (SelectedOfferte == null)
+        {
+            return;
+        }
+
+        // Vor dem Entfernen einen Hinweis anzeigen.
+        ConfirmService.ShowDeleteConfirm(async confirmed =>
+        {
+            if (confirmed)
+            {
+                SelectedOfferte?.Offertenzustaende.Remove(zustand);
+                if (SelectedZustand?.Id == zustand.Id)
+                {
+                    SelectedZustand = null;
+                    _expandedZustandId = null;
+                }
+            }
+            await InvokeAsync(StateHasChanged);
+        });
+    }
+
+    /// <summary>Entfernt das ausgewählte Los nur im Speicher; persistiert wird erst beim Speichern.</summary>
+    private void DeleteLos()
+    {
+        if (SelectedLos == null)
+        {
+            return;
+        }
+
+        // Mindestens ein Los muss immer existieren.
+        if (Lose.Count < 2)
+        {
+            return;
+        }
+
+        var losId = SelectedLos.Id;
+
+        // Vor dem Entfernen einen Hinweis anzeigen.
+        ConfirmService.ShowDeleteConfirm(async confirmed =>
+        {
+            if (confirmed)
+            {
+                var los = Lose.SingleOrDefault(l => l.Id == losId);
+                if (los != null)
+                {
+                    Lose.Remove(los);
+                    SelectedLos = null;
+                    SelectedOfferte = null;
+                    _expandedLosId = null;
+                    _expandedOfferteId = null;
+                }
+            }
+            await InvokeAsync(StateHasChanged);
+        });
+    }
+
+    /// <summary>Entfernt die ausgewählte Offerte nur im Speicher; persistiert wird erst beim Speichern.</summary>
+    private void DeleteOfferte()
+    {
+        if (SelectedOfferte == null)
+        {
+            return;
+        }
+
+        var offerteId = SelectedOfferte.Id;
+        var losId = SelectedOfferte.LosId;
+
+        // Vor dem Entfernen einen Hinweis anzeigen.
+        ConfirmService.ShowDeleteConfirm(async confirmed =>
+        {
+            if (confirmed)
+            {
+                var los = Lose.SingleOrDefault(l => l.Id == losId);
+                los?.Offerten.RemoveAll(o => o.Id == offerteId);
+                SelectedOfferte = null;
+                _expandedOfferteId = null;
+            }
+            await InvokeAsync(StateHasChanged);
+        });
+    }
+
+    private async Task Abschliessen()
+    {
+        // Abschliessen lädt neu und würde pendente Änderungen verwerfen (Chip ist dann ausgeblendet);
+        // nicht offene Lose dürfen nicht abgeschlossen werden (Chip ist dann ausgegraut).
+        if (SelectedLos == null || SelectedLos.Zustand != EnumLosZustand.Offen || HasChanges())
+        {
+            return;
+        }
+        if (await ErrorHandler.HandleAsync(() => LosService.Abschliessen(SelectedLos.Id)))
+        {
+            SucheState.ErgebnisVeraltet = true;
+
+            // Neu geladene Zustände sofort anzeigen.
+            await ReloadLose();
+            SnapshotOriginal();
+        }
+    }
+
+    /// <summary>
+    /// Sucht den ersten ungültigen Eintrag (zuerst Los, dann Offerte), klappt ihn auf, selektiert ihn und
+    /// markiert die Inline-Validierung. Liefert true, wenn etwas Ungültiges gefunden und angezeigt wurde.
+    /// </summary>
+    private async Task<bool> ZeigeUngueltigenEintragFalls()
+    {
+        var losValidator = new LosValidator(true);
+        var invalidLos = Lose.FirstOrDefault(l => !losValidator.Validate(l).IsValid);
+        if (invalidLos != null)
+        {
+            await ExpandLos(invalidLos);
+            _validatePending = true;
+            StateHasChanged();
+            return true;
+        }
+
+        var offerteValidator = new OfferteValidator(true, PublikationOfzIds);
+        var zustandValidator = new OfferteOffertezustandValidator(true, PublikationOfzIds);
+        foreach (var los in Lose)
+        {
+            var invalidOff = los.Offerten.FirstOrDefault(o => !offerteValidator.Validate(o).IsValid);
+            if (invalidOff != null)
+            {
+                await ExpandLos(los);
+                await ExpandOfferte(los, invalidOff);
+                // Liegt der Fehler in einem Zustand, diesen nach dem Render ebenfalls aufklappen.
+                var invalidZustand = invalidOff.Offertenzustaende.FirstOrDefault(z => !zustandValidator.Validate(z).IsValid);
+                if (invalidZustand != null)
+                    _pendingExpandZustandId = invalidZustand.Id;
+                _validatePending = true;
+                StateHasChanged();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private async Task ExpandLos(Los los)
+    {
+        if (_losGrid != null)
+        {
+            await _losGrid.CollapseAllDetailsAsync();
+            await _losGrid.ToggleDetailAsync(los);
+            _expandedLosId = los.Id;
+        }
+        SelectedOfferte = null;
+        _expandedOfferteId = null;
+        SelectLos(los);
+    }
+
+    private async Task ExpandOfferte(Los los, Offerte offerte)
+    {
+        if (_offerteGrid != null)
+        {
+            await _offerteGrid.CollapseAllDetailsAsync();
+            await _offerteGrid.ToggleDetailAsync(offerte);
+            _expandedOfferteId = offerte.Id;
+        }
+        SelectOfferte(offerte);
+    }
+
+    private async Task Save()
+    {
+        // Ungültige Einträge zuerst inline anzeigen statt ein nichtssagendes Popup beim Server-Save zu provozieren.
+        if (await ZeigeUngueltigenEintragFalls())
+        {
+            return;
+        }
+
+        _buttonLoading = true;
+        StateHasChanged();
+
+        var success = false;
+        await ErrorHandler.HandleAsync(async () =>
+        {
+            await LosService.SaveTab(Ausschreibung!.Id, Lose, Ausschreibung!.Pflichtenhefter);
+            success = true;
+            return new ServiceResult<Los>();
+        });
+
+        if (success)
+        {
+            SucheState.ErgebnisVeraltet = true;
+
+            // Das aktuell aufgeklappte Los merken und nach dem Neuladen wiederherstellen,
+            // damit der Anwender die Ansicht nicht jedes Mal neu aufklappen muss.
+            // Offerten (und deren Zustände) bleiben nach dem Speichern bewusst zugeklappt.
+            var restoreLosId = _expandedLosId;
+
+            await ReloadLose();
+            SnapshotOriginal();
+
+            _pendingRestoreLosId = restoreLosId;
+        }
+
+        _buttonLoading = false;
+        StateHasChanged();
+    }
+
+    /// <summary>Meldet die Änderungsprüfung dieses Tabs beim Navigations-Guard ab.</summary>
+    public void Dispose()
+    {
+        EditState.Unregister(HasChanges);
+    }
+}

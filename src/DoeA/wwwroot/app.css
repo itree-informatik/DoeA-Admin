@@ -1,0 +1,683 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL */
+
+/* Noto Sans ist die Web-Schrift des CD Bund; die MudBlazor-Komponenten erhalten sie über DoeATheme. */
+html, body {
+    font-family: "Noto Sans", Helvetica, Arial, sans-serif;
+}
+
+/* itreemud.css setzt body auf 100 % (16px); Labels und Fliesstext bleiben bei der Grundschrift des Themes (14px)
+   wie die Eingabefelder. Nur body, nicht html: sonst schrumpfte die rem-Basis aller MudBlazor-Grössen mit. */
+body {
+    font-size: var(--mud-typography-default-size);
+}
+
+a, .btn-link {
+    color: #006bb7;
+}
+
+.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
+  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
+}
+
+.content {
+    padding-top: 1.1rem;
+}
+
+article {
+    margin-bottom: 30px;
+}
+
+h1:focus {
+    outline: none;
+}
+
+.valid.modified:not([type=checkbox]) {
+    outline: 1px solid #26b050;
+}
+
+.invalid {
+    outline: 1px solid #e50000;
+}
+
+.validation-message {
+    color: #e50000;
+}
+
+.nav-page-list .nav-link {
+    color: #757575;
+}
+
+#navmenu .nav-link.not-active {
+    border-left: none !important;
+    font-weight: normal !important;
+}
+
+#navmenu .nav-link.active {
+    border-left: red 2px solid;
+    font-weight: bold;
+}
+
+/* ItreeSpinner (id="spinner") in den Stammdaten-Tabs: Abstand nach oben und unten. */
+.tabstrip_stammdaten #spinner {
+    margin-top: 100px !important;
+    margin-bottom: 100px !important;
+}
+
+.tabstrip_stammdaten {
+    margin-bottom: 30px !important;
+}
+
+.spinner-button {
+    align-self: center;
+    /* MudProgressCircular (24px, inline-block auf der Baseline) würde den Button höher machen:
+       auf 20px verkleinern und mittig ausrichten, dann bleibt die Buttonhöhe unverändert */
+    width: 20px !important;
+    height: 20px !important;
+    vertical-align: middle;
+}
+
+.field-medium {
+    width: 300px !important;
+}
+
+.field-xlarge {
+    width: 500px !important;
+}
+
+/* Exportgruppe: Filterraster mit höchstens vier Spalten je Zeile. Die max-width verhindert, dass
+   die Felder auf breiten Bildschirmen über die ganze Seite gezogen werden. */
+.filter-raster {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 280px));
+    gap: 16px;
+    max-width: 1220px;
+}
+
+/* Variante für die Mehrfachauswahl-Filter: etwas breitere Mindestspalte. */
+.filter-raster-breit {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 280px));
+}
+
+/* Ausschreibungssuche: fit-content gibt Filterzeile und Searchbox-Zeile dieselbe Breite —
+   die Searchbox endet damit auf der Flucht des letzten Filterfelds statt der Standard-30%. */
+.filter-block {
+    width: fit-content;
+}
+
+    .filter-block .searchbox {
+        width: 100%;
+    }
+
+/* Anklickbare Überschrift eines aufklappbaren Abschnitts. */
+.abschnitt-kopf {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Titel der Exportgruppe im Bearbeitungsmodus: Eingabefeld in Überschriftgrösse. Die font-size
+   muss zusätzlich am inneren input stehen, sonst gewinnt die Regel von MudBlazor. */
+.exportgruppe-name-eingabe,
+.exportgruppe-name-eingabe input {
+    font-size: 1.4rem;
+}
+
+/* Wrapper um ein breites Grid: scrollt in sich selbst, statt den Flex-Container der Seite
+   aufzudehnen (Flex-Kinder haben implizit min-width:auto). */
+.grid-wrapper {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+/* Einzug des Seiteninhalts auf die Flucht des Seitentitels. */
+.inhalt-eingerueckt {
+    padding-left: 1.1rem;
+}
+
+/* Log-Filterleiste: drei Zeilen in der Grid-Toolbar. MudBlazor gibt der Toolbar eine feste Höhe,
+   die für eine Zeile ausgelegt ist — hier auf den Platz der drei Zeilen gesetzt (Selektor am Grid,
+   damit die Regel nicht alle anderen Grids trifft). */
+.admin-grid .mud-table-toolbar {
+    height: auto;
+}
+
+.log-toolbar {
+    height: 150px;
+}
+
+.log-toolbar-zeile {
+    gap: 20px;
+    margin: 0;
+}
+
+.log-toolbar-zeile-innen {
+    gap: 20px;
+    margin: 0 20px 0 5px;
+}
+
+.log-feldgruppe {
+    gap: 20px;
+}
+
+.log-feld-maxzeilen {
+    width: 60px;
+}
+
+.log-feld-suchtext {
+    width: 400px;
+}
+
+/* Filterfeld in einer Grid-Toolbar — soll die Toolbar nicht komplett einnehmen. */
+.filter-feld {
+    max-width: 300px;
+}
+
+/* Feste Feldbreiten in den Formularzeilen der Ausschreibung. Bewusst als Klassen statt
+   Style-Attribut: die Werte stehen so an einer Stelle, und bei MudPicker würde ein Style-Attribut
+   ohnehin auf dem Popup-Paper statt auf dem Feld landen. */
+.feld-w-60 {
+    width: 60px;
+}
+
+.feld-w-100 {
+    width: 100px;
+}
+
+.feld-w-120 {
+    width: 120px;
+}
+
+.feld-w-160 {
+    width: 160px;
+}
+
+.feld-w-180 {
+    width: 180px;
+}
+
+.feld-w-200 {
+    width: 200px;
+}
+
+.feld-w-250 {
+    width: 250px;
+}
+
+.feld-w-300 {
+    width: 300px;
+}
+
+.feld-w-350 {
+    width: 350px;
+}
+
+.feld-w-500 {
+    width: 500px;
+}
+
+.feld-w-600 {
+    width: 600px;
+}
+
+/* Mindestbreiten für Filterfelder, die in einer umbrechenden Zeile mitwachsen dürfen. */
+.feld-minw-140 {
+    min-width: 140px;
+}
+
+.feld-minw-180 {
+    min-width: 180px;
+}
+
+/* Markierung der ausgewählten/neu hinzugefügten Zeile — helles Grau; bewusst nicht rötlich,
+   da Rot in DoeA für Fehler reserviert ist. */
+.row-selected {
+    background-color: #F5F5F5 !important;
+}
+
+/* Formular-Kasten im aufgeklappten Detail-Einschub (Lose/Offerten/Zustände): eigener weisser
+   Hintergrund, damit der graue Hover der Detail-Zeile nicht durch den Kasten mit den Feldern
+   durchscheint — der Hover bleibt drumherum sichtbar, der Kasten selbst wirkt als weisse Karte. */
+.mud-table-child-content .box {
+    background-color: #fff;
+}
+
+.button-grp {
+    gap: 10px;
+}
+
+.btn-group-grid {
+    display: flex;
+}
+
+.btn-group-grid button {
+    margin-right: 5px;
+}
+
+/* ItreeButtonGroup auf den Ausschreibungs-Tabs: volle Breite, damit die rechtsbündigen Buttons
+   am Formularrand stehen; !important, weil die Komponente die Breite sonst selbst setzt. */
+.buttongroup-vollbreit {
+    width: 100% !important;
+}
+
+/* Auswertungs-Kacheln: feste Label-Breiten halten die Controls aller Zeilen in einer Flucht,
+   auch wenn die Übersetzungen unterschiedlich lang sind. */
+.tile-label {
+    width: 120px;
+}
+
+.tile-label-schmal {
+    width: 100px;
+}
+
+/* Jahres-Auswahl der Kacheln: das Dropdown soll nicht über die halbe Kachel laufen. */
+.tile-jahr {
+    max-width: 200px;
+}
+
+/* Mindesthöhen der Kacheln: halten das Raster ruhig, wenn eine Kachel wächst (z.B. durch die
+   Fehlermeldung unter einem ungültigen Datumsbereich). */
+.tile-hoehe-xl {
+    min-height: 570px;
+}
+
+.tile-hoehe-l {
+    min-height: 280px;
+}
+
+.tile-hoehe-m {
+    min-height: 180px;
+}
+
+.tile-hoehe-s {
+    min-height: 140px;
+}
+
+/* Ämter-Auswahl: feste Höhe mit eigenem Scroll, damit die Kachel bei vielen Ämtern nicht wächst. */
+.aemter-liste {
+    height: 173px;
+    overflow-y: auto;
+    padding: 4px;
+}
+
+/* Auswertung-Tiles: Label vertikal zu den (höheren) Mud-Controls zentrieren.
+   Hinweis: ".d-flex-column" ist hier kein echtes Bootstrap-flex-column, sondern
+   wird in den Tiles als horizontale Zeile verwendet. Zeilen mit ".align-items-start"
+   (z.B. mehrzeilige Textfelder/Radio-Gruppen) behalten ihre Top-Ausrichtung. */
+.d-flex.d-flex-column {
+    align-items: center;
+}
+
+/* Bootstrap setzt auf .form-label ein margin-bottom: 0.5rem, das die vertikale
+   Zentrierung verschiebt (Label wirkt zu hoch). In diesen Zeilen neutralisieren. */
+.d-flex.d-flex-column .form-label {
+    margin-bottom: 0;
+}
+
+.itree-pt-5 {
+    padding-top: 5px;
+}
+
+/* Ausschreibungssuche als Hauptprojekt-Picker: die Zeile der eigenen Ausschreibung ist gesperrt
+   (sie darf nicht ihr eigenes Hauptprojekt sein) und wird im hellen Rot des Lösch-Chips markiert.
+   !important, weil sonst die Zebra-Regel von ItreeGrid (tr.itree-grid-row-alt) jede zweite Zeile übermalt. */
+.row-color-red {
+    background-color: #fdecea !important;
+}
+
+/* Spaltenauswahl: dreispaltige Checkbox-Liste, die Mindestbreite verhindert Umbrüche in den Labels. */
+.spalten-auswahl {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(220px, 1fr));
+    gap: 0 16px;
+}
+
+/* Verweisfeld eines Pickers (Anzeigefeld + Buttons) — feste Breite, damit die Buttons unabhängig
+   von der Länge der Bezeichnung an derselben Stelle stehen. */
+.picker-feld {
+    width: 600px;
+}
+
+.cursor-pointer {
+    cursor: pointer;
+}
+
+/* Dichteres MudSelect-Item: ein py-0 allein reduziert nur das Padding, die min-height
+   (~48px / dense ~36px) bliebe erhalten; !important überschreibt die Framework-min-height. */
+.dense-item {
+    min-height: 0 !important;
+    padding-top: 2px !important;
+    padding-bottom: 2px !important;
+}
+
+/* Kompakte Ämter-Liste (MudBlazor 9): die Zeilenhöhe kommt nicht aus einer
+   min-height, sondern aus dem margin des inneren .mud-list-item-text-Wrappers
+   (4px oben/unten) – den nullen wir hier. */
+.dense-item .mud-list-item-text {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+/* Das dense-Padding der Checkbox (4px rund um das Icon) treibt die Zeilenhöhe. */
+.dense-item .mud-checkbox-dense {
+    padding: 0 !important;
+}
+/* Pager über der Tabelle (Ausschreibungssuche, Exportgruppe): der Pager bleibt
+   funktional im Pager-Slot des MudDataGrid im ItreeGrid (unten im DOM), wird aber
+   optisch ÜBER die Tabelle verschoben — das Grid-Root wird zur Flex-Spalte und
+   die Bereiche werden umsortiert (Toolbar -> Pager -> Tabelle). Anwendung:
+   Klasse auf ein Wrapper-Element um das ItreeGrid setzen. */
+.pager-oben .mud-data-grid {
+    display: flex;
+    flex-direction: column;
+}
+
+.pager-oben .mud-data-grid > .mud-table-toolbar {
+    order: 1;
+}
+
+.pager-oben .mud-data-grid > .mud-table-pagination {
+    order: 2;
+    /* Standard-Trennlinie des Tabellen-Pagers entfällt in dieser Position */
+    border-top: none !important;
+}
+
+.pager-oben .mud-data-grid > .mud-table-container {
+    order: 3;
+}
+
+/* MudBlazor gibt der Grid-Toolbar eine fixe Höhe (64px) — mehrzeiliger Toolbar-Inhalt
+   (z.B. die zweizeilige Suchleiste der Ausschreibungssuche) würde sonst unten überlaufen
+   und vom darüber angeordneten Pager überdeckt. min-height erhält die Standardhöhe
+   für einzeilige Toolbars (z.B. Exportgruppe). */
+.pager-oben .mud-data-grid > .mud-table-toolbar {
+    height: auto;
+    min-height: 64px;
+}
+
+/* Mindestbreite für Grids, deren Toolbar-Filter nicht beliebig schmal werden können
+   (Ausschreibungssuche: Jahr + zwei Datums- + zwei Betragsfelder in einer Zeile).
+   Unterhalb der Mindestbreite wird der komplette Block (Toolbar, Pager, Tabelle)
+   gemeinsam horizontal gescrollt, statt die Filterfelder zu stauchen oder über den
+   Rand laufen zu lassen. Die min-width sitzt am Grid, damit alle drei Bereiche
+   dieselbe Breite haben und synchron scrollen.
+   Anwendung: Klasse auf den Wrapper um das ItreeGrid (neben .pager-oben). */
+.grid-scroll-x {
+    overflow-x: auto;
+}
+
+.grid-scroll-x .mud-data-grid {
+    min-width: 740px;
+}
+
+/* Die Toolbar-Zeilen richten sich an der Grid-Mindestbreite aus (nicht an der
+   Fensterbreite), damit die rechtsbündigen Zeilen (Suchfeld, Buttons) beim
+   horizontalen Scrollen mitwandern. */
+.grid-scroll-x .mud-table-toolbar {
+    min-width: 100%;
+}
+
+/* Schmale Datumsfelder in Filterleisten und Formularen: Breite über die Klasse am Picker-Root (Input).
+   Bewusst NICHT über das Style-Attribut des MudDatePicker — MudPicker wendet Style auf das
+   Popup-Paper an, wodurch der aufgeklappte Kalender auf die Feldbreite abgeschnitten würde. */
+.mud-picker.datepicker-schmal {
+    width: 160px;
+}
+
+/* Verzögerung durch Auftraggeber (Grunddaten): feste Breite zwingt das Label auf zwei Zeilen,
+   die Checkbox erhält die Höhe eines MudInput-Controls — so fluchten Label und Control in der
+   align-items-end-Zeile mit den Datumsfeldern. */
+.verzoegerung-feld {
+    width: 120px;
+}
+
+.verzoegerung-feld .verzoegerung-checkbox {
+    display: flex;
+    align-items: center;
+    height: 35px;
+}
+
+/* Lose und Offerten: Die aufgeklappten Formulare (Los, Offertenzustand) stehen in der Detailzeile
+   (DetailTemplate) ihres ItreeGrid und sollen jedes Feld unter seiner Spaltenüberschrift zeigen. Darum haben die
+   Spalten feste Breiten = Feldbreite + 40px Zellpadding (16px links, 24px rechts, border-box), und
+   das Formular verwendet die Feldbreiten als Raster mit 40px Spaltenabstand. Die letzte
+   Tabellenspalte bleibt ohne Breite und nimmt den Rest auf. Spalten mit Filter-Icon (Los: Zustand,
+   Abbruchdatum) sind breiter, weil die Überschrift samt Icons sonst die Spalte aufdrückt und
+   alles Folgende verschiebt.
+   padding-left gleicht den Versatz zur Tabelle aus (Auswahlspalte, Zellpadding und Rahmen-Padding
+   der Kindzeile, im Browser nachgemessen). Die Werte hängen zusammen — bei einer Änderung beide
+   Seiten anpassen. */
+.spalte-auswahl {
+    width: 60px;
+}
+
+.spalte-datum {
+    width: 200px;
+}
+
+.spalte-anzahltage {
+    width: 130px;
+}
+
+.spalte-verzoegerung {
+    width: 160px;
+}
+
+.los-spalte-bezeichnung {
+    width: 340px;
+}
+
+.los-spalte-zustand {
+    width: 180px;
+}
+
+.zustand-spalte-zustand {
+    width: 340px;
+}
+
+.los-formular,
+.zustand-formular {
+    display: grid;
+    column-gap: 40px;
+    align-items: end;
+}
+
+/* Der Los-Rahmen hat kein eigenes Padding: Abstand unten und rechts darum hier. Unten als Padding
+   statt Margin, weil diese sonst aus dem Rahmen herausfiele (Margin-Collapsing). */
+.los-formular {
+    grid-template-columns: 300px 140px 160px 160px 90px 120px 1fr;
+    padding-left: 52px;
+    padding-right: 1rem;
+    padding-bottom: 1rem;
+}
+
+/* Zustand | Eingereicht | Datum (bei Publikation das Publikationsdatum) | Anzahl Tage | Verzögerung | Aktionen. Ohne
+   Publikation fehlen Eingereicht und Verzögerung (eine leere Zelle hält die Spalte «Eingereicht»); die Aktionen bleiben
+   trotzdem in der letzten Spalte. */
+.zustand-formular {
+    grid-template-columns: 300px 160px 160px 90px 120px 1fr;
+    padding-left: 52px;
+}
+
+.los-formular > :last-child,
+.zustand-formular > :last-child {
+    grid-column: -2 / -1;
+    justify-self: end;
+}
+
+/* Zeile «Anzahl Tage» (AnzahlTageFeld) direkt unter dem Datumspaar, ab der Spalte «Eingereicht». Die
+   Platzierung hängt vom Raster des Containers ab und steht hier, weil Scoped CSS der Container das Markup der
+   Unterkomponente nicht erreicht.
+   Grunddaten (datum-raster): über alle Spalten; bis zur nächsten Zeile mit Feldern ein grösserer Abstand. */
+.datum-raster > .anzahl-tage-zeile {
+    grid-column: 1 / -1;
+}
+
+.datum-raster > .anzahl-tage-zeile:not(:last-child) {
+    margin-bottom: 0.75rem;
+}
+
+/* Berichtigungen: über alle Spalten; der Abstand darunter trennt die Berichtigungen. */
+.berichtigungen-row > .anzahl-tage-zeile {
+    grid-column: 1 / -1;
+    margin-bottom: 0.5rem;
+}
+
+/* Meldungen zu Eingereicht und Publikation (ValidationMessage in AnzahlTageFeld): umbrechen statt max-content aus itreemud.css. */
+.anzahl-tage-eingereicht .validation-message,
+.anzahl-tage-meldung .validation-message {
+    width: auto;
+}
+
+/* Los- und Zustand-Formular: zweite Zeile; die Formularspalte unter der Tabellenspalte «Anzahl Tage» bleibt leer. */
+.los-formular > .anzahl-tage-zeile {
+    grid-row: 2;
+    grid-column: 3 / -1;
+    margin-top: 0.25rem;
+}
+
+.zustand-formular > .anzahl-tage-zeile {
+    grid-row: 2;
+    grid-column: 2 / -1;
+    margin-top: 0.25rem;
+}
+
+/* Chips (Badge + Hinzufügen/Aktions-Chip) — global, da auf mehreren Seiten verwendet
+   (Grunddaten: CPV/Berichtigungen; Lose und Offerten: BKP/Los/Offerte/Zustand). */
+.cpv-container {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    flex-shrink: 1;
+    flex-basis: 0;
+    min-width: 250px;
+    max-width: 100%;
+}
+
+.cpv-label-button {
+    align-items: baseline;
+}
+
+.cpv-badge {
+    background-color: #f0f2f5;
+    border: 1px solid #ced4da;
+    border-radius: 16px;
+    padding: 2px 8px;
+    font-size: 13px;
+    color: #495057;
+    margin-bottom: 3px;
+    line-height: 1.2;
+}
+
+.cpv-add-chip {
+    background-color: #e6f0ff;
+    border: 1px solid #80bdff;
+    color: #004085;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s ease;
+}
+
+.cpv-add-chip:hover {
+    background-color: #d0e7ff;
+}
+
+.cpv-delete-chip {
+    background-color: #fdecea;
+    border: 1px solid #f1998e;
+    color: #842029;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s ease;
+}
+
+.cpv-delete-chip:hover {
+    background-color: #f8d7da;
+}
+
+/* Löschen-Button (ItreeButton mit Typ Löschen): gleiche Farben wie der Lösch-Chip
+   (.cpv-delete-chip) statt des grauen Stils. .itree-button erhöht die Spezifität
+   über die Regeln der Komponente (.itree-button:hover) aus itreemud.css. */
+.itree-button.btn-loeschen {
+    background-color: #fdecea;
+    border-color: #f1998e;
+    color: #842029;
+}
+
+/* Hover nur im aktiven Zustand — der disabled-Button behält seine Grundfarben. */
+.itree-button.btn-loeschen:not(:disabled):hover {
+    background-color: #f8d7da;
+    border-color: #f1998e;
+    color: #842029;
+}
+
+.cpv-chip-disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.btn-close-small {
+    width: 0.8rem;
+    height: 0.8rem;
+    font-size: 0.55rem;
+    padding: 0;
+    margin-left: 8px;
+    opacity: 0.7;
+}
+
+.btn-close-small:hover {
+    opacity: 1;
+    color: darkred;
+}
+
+/* Fieldsets der Ausschreibungs-Grunddaten — global statt scoped, da sich Seite und
+   Unterkomponenten (Verantwortliche, Berichtigungen) die Klassen teilen. */
+.form-fieldset {
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    padding: 1.5rem;
+    position: relative;
+    margin-bottom: 1.5rem;
+}
+
+.form-fieldset-bemerkung {
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    padding: 0.5rem 1rem;
+    position: relative;
+    margin-bottom: 1.5rem;
+}
+
+/* MudBlazor gibt dem mehrzeiligen Textfeld cursor:auto statt des Textbox-Cursors -> hier korrigieren. */
+.form-fieldset-bemerkung .mud-input > textarea.mud-input-root {
+    cursor: text;
+}
+
+/* Zugeklappt bleibt nur der Legendenstreifen — mit dem vollen Padding wirkt das leere Fieldset wie eine leere Zeile */
+.form-fieldset.fieldset-zugeklappt {
+    padding: 0.5rem 1.5rem 0;
+}
+
+.fieldset-legend {
+    position: absolute;
+    top: -0.8rem;
+    left: 1rem;
+    background-color: #fff;
+    padding: 0 0.5rem;
+    font-size: 13px;
+    font-weight: 500;
+    color: #495057;
+    width: auto;
+    max-width: calc(100% - 2rem);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Aufklappbare Fieldset-Titel */
+.legend-klappbar {
+    cursor: pointer;
+    user-select: none;
+}

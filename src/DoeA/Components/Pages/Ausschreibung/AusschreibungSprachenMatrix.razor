@@ -1,0 +1,98 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Data.Models.DTO
+@using DoeA.Data.Models.DTO.Stammdaten
+
+@* Sprache-Matrix (Dokumentart × Sprache) der Ausschreibung: Häkchen pflegen die
+   AusschreibungSprache-Zuordnungen direkt auf dem übergebenen Modell. *@
+<div class="sprachen-container">
+    <div class="sprachen-matrix">
+
+        <div></div>
+
+        @foreach (var sprache in Sprachen)
+        {
+            <div class="sprach-header-cell">@sprache.Bezeichnung</div>
+        }
+
+        @foreach (var dokumentart in DokumentartenDerVerfahrensart)
+        {
+            <div class="sprach-dokumentart-cell">@dokumentart.Bezeichnung</div>
+
+            @foreach (var sprache in Sprachen)
+            {
+                var angehakt = Ausschreibung.AusschreibungSprache.Any(x => x.DoaId == dokumentart.Id && x.SprId == sprache.Id);
+
+                <div class="sprach-checkbox-cell">
+                    <input type="checkbox"
+                           checked="@angehakt"
+                           @onchange="e => Aktualisiere(dokumentart, sprache, (bool)e.Value!)" />
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    /// <summary>Bearbeitete Ausschreibung — die Sprach-Zuordnungen werden direkt auf ihr gepflegt.</summary>
+    [Parameter, EditorRequired]
+    public Ausschreibung Ausschreibung { get; set; } = null!;
+
+    /// <summary>Alle Sprachen (Spalten der Matrix).</summary>
+    [Parameter, EditorRequired]
+    public List<Sprache> Sprachen { get; set; } = [];
+
+    /// <summary>Alle Dokumentarten — die Zeilen ergeben sich daraus je nach Verfahrensart.</summary>
+    [Parameter, EditorRequired]
+    public List<Dokumentart> Dokumentarten { get; set; } = [];
+
+    /// <summary>Meldet jede Änderung an die Seite, damit deren Dirty-Check neu rendert (Speichern-Button).</summary>
+    [Parameter]
+    public EventCallback OnGeaendert { get; set; }
+
+    /// <summary>
+    /// Zeilen der Sprache-Matrix: ausser bei den mehrstufigen Verfahren wird nur die Publikation erfasst.
+    /// </summary>
+    private List<Dokumentart> DokumentartenDerVerfahrensart => Ausschreibung.Verfahrensart.NaturalId switch
+    {
+        nameof(EnumVerfahrensart.Freihändig) or
+        nameof(EnumVerfahrensart.VorankündigungOffen) or
+        nameof(EnumVerfahrensart.VorankündigungSelektiv) or
+        nameof(EnumVerfahrensart.VorankündigungUnbekannt) or
+        nameof(EnumVerfahrensart.RFI) => Dokumentarten
+            .Where(x => x.NaturalId == EnumDokumentart.Publikation.ToString())
+            .ToList(),
+        nameof(EnumVerfahrensart.Offen) or
+        nameof(EnumVerfahrensart.Selektiv) or
+        nameof(EnumVerfahrensart.Einladung) => Dokumentarten.ToList(),
+        _ => throw new NotImplementedException($"Verfahrensart: {Ausschreibung.Verfahrensart.NaturalId} not defined")
+    };
+
+    private async Task Aktualisiere(Dokumentart dokumentart, Sprache sprache, bool angehakt)
+    {
+        var vorhanden = Ausschreibung.AusschreibungSprache
+            .FirstOrDefault(x => x.DoaId == dokumentart.Id && x.SprId == sprache.Id);
+
+        if (!angehakt)
+        {
+            if (vorhanden != null)
+            {
+                Ausschreibung.AusschreibungSprache.Remove(vorhanden);
+            }
+        }
+        else if (vorhanden == null)
+        {
+            Ausschreibung.AusschreibungSprache.Add(new AusschreibungSprache
+            {
+                Dokumentart = dokumentart.Bezeichnung,
+                DoaId = dokumentart.Id,
+                Sprache = sprache.Bezeichnung,
+                SprId = sprache.Id,
+                Wert = true
+            });
+        }
+
+        await OnGeaendert.InvokeAsync();
+    }
+}

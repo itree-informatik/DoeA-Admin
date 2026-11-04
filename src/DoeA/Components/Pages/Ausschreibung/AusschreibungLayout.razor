@@ -1,0 +1,377 @@
+﻿@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Components.Layout
+@using DoeA.Data.Models.DTO
+@using DoeA.Data.Helper
+@using DoeA.Services
+@using Microsoft.AspNetCore.Components.Routing
+
+@layout MainLayout
+@* Bewusst LayoutComponentBase statt MainLayout: Erben von MainLayout würde dessen OnInitialized
+   mitlaufen lassen und die Service-Events (OnError/OnChange/OnLanguageChanged) doppelt abonnieren. *@
+@inherits LayoutComponentBase
+@implements IDisposable
+
+@inject INavigationService NavigationService
+@inject IAusschreibungService AusschreibungService
+@inject NavigationManager NavigationManager
+@inject AusschreibungEditState EditState
+@inject AusschreibungHerkunftState HerkunftState
+@inject AusschreibungVorlageState VorlageState
+
+@inject ConfirmService ConfirmService
+
+@if (_isLoading || _aus == null)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <div id="ausschreibung_container">
+        @* Dirty-Prüfung und Bestätigung übernimmt der LocationChanging-Handler. *@
+        <div class="mb-2">
+            <ItreeButton Icon="@Icons.Material.Filled.ArrowBack"
+                         ButtonTextKey="AUSSCHREIBUNG_ZURUECK_ZUR_SUCHE"
+                         ShowButtonText="true"
+                         OnClick="@(() => NavigationService.NavigateTo(HerkunftState.RuecksprungUrl ?? "/"))" />
+        </div>
+        <div class="container-fluid px-0 header">
+            <div class="border p-3 w-100">
+                <div class="row fw-bold text-start">
+                    @foreach (var item in _headerItems)
+                    {
+                        <div class="text-truncate @item.Class">@TranslationHelper.Translate(item.Header)</div>
+                    }
+                </div>
+                <div class="row text-start">
+                    @foreach (var item in _headerItems)
+                    {
+                        <div class="text-truncate @item.Class">@item.Value</div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <ItreeTabs @ref="_tabs" Class="mt-3" Navigation="true" ActiveTabId="@_currentTab?.TitleKey"
+                   OnPreviewInteraction="TabGewaehlt">
+            @foreach (var item in _menuList.OrderBy(x => x.Sort))
+            {
+                <ItreeTabPanel Id="@item.TitleKey" Text="@item.Title" />
+            }
+        </ItreeTabs>
+
+        @* Die Tab-Inhalte erhalten die geteilte Ausschreibung sowie die Rückrufe zum Nachladen
+           (nach dem Speichern einer Neuanlage) und zum Auffrischen von Kopfzeile und Menü. *@
+        <CascadingValue Value="LoadAusschreibung">
+            <CascadingValue Value="@_aus">
+                <CascadingValue Value="RefreshAusschreibung">
+                    @Body
+                </CascadingValue>
+            </CascadingValue>
+        </CascadingValue>
+    </div>
+}
+
+@code {
+    private const string KeyGrunddaten = "AUSSCHREIBUNG_MENU_GRUNDDATEN";
+    private const string KeyLoseUndOfferten = "AUSSCHREIBUNG_MENU_LOSEUNDOFFERTEN";
+    private const string KeyTerminplanung = "AUSSCHREIBUNG_MENU_TERMINPLANUNG";
+
+    // Wird nach bestätigtem Verwerfen gesetzt, damit die anschliessende programmatische
+    // Navigation nicht erneut vom Guard abgefangen wird.
+    private bool _bypassGuard;
+    private bool _isLoading = true;
+
+    private Ausschreibung? _aus;
+    private Ausschreibung? _ausOrig;
+
+    private IDisposable? _locationChangingRegistration;
+
+    private ItreeTabs? _tabs;
+
+    private List<HeaderItem> _headerItems = new();
+    private List<TabMenuItem> _menuList = new();
+
+    private TabMenuItem? _currentTab;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var segments = NavigationService.GetRelativeUri().Split("/");
+
+        // Id der Ausschreibung aus der Route lesen (ausschreibung/{id}/...)
+        if (segments.Length >= 2 && Guid.TryParse(segments[1].TrimEnd('/'), out var ausId))
+        {
+            if (_aus == null || _aus.Id != ausId)
+            {
+                await LoadAusschreibung(ausId);
+            }
+        }
+
+        SetCurrentTab();
+
+        // Falls der via URL angesteuerte Tab für die aktuelle Verfahrensart nicht (mehr) sichtbar ist,
+        // auf Grunddaten zurückleiten (z.B. Deep-Link auf Terminplanung bei Verfahrensart RFI).
+        if (_currentTab == null && _aus != null && _aus.Id != Guid.Empty)
+        {
+            var grunddaten = _menuList.FirstOrDefault(t => t.TitleKey == KeyGrunddaten);
+            if (grunddaten != null)
+            {
+                SetCurrentTab(grunddaten);
+                NavigationService.NavigateTo($"/ausschreibung/{_aus.Id}", false, true);
+            }
+        }
+
+        _isLoading = false;
+    }
+
+    /// <summary>Lädt die Ausschreibung neu; <c>Guid.Empty</c> erzeugt eine Neuanlage (leer oder aus der Vorlage).</summary>
+    public async Task LoadAusschreibung(Guid ausId)
+    {
+        if (ausId != Guid.Empty)
+        {
+            _aus = await AusschreibungService.Get(ausId);
+
+            // Veralteter Deep-Link oder gelöschte Ausschreibung: zurück zur Suche statt Endlos-Spinner;
+            // replace, damit der Zurück-Button nicht wieder auf die tote Id führt.
+            if (_aus == null)
+            {
+                NavigationService.NavigateTo("/", false, true);
+                return;
+            }
+        }
+        else
+        {
+            // Neuanlage, bei einer Folgeausschreibung aus der Vorlage. Bei der leeren Neuanlage ist das Jahr bewusst leer
+            // (Pflichtfeld): es bestimmt die Nummer und soll nicht unbemerkt übernommen werden.
+            _aus = VorlageState.Abholen() ?? new Ausschreibung { Aktiv = true };
+        }
+
+        _ausOrig = _aus.Clone();
+        SetMenu();
+        SetHeader();
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Baut die Tabs auf; welche sichtbar sind, hängt an der Verfahrensart.</summary>
+    private void SetMenu()
+    {
+        if (_aus == null)
+        {
+            return;
+        }
+
+        _menuList.Clear();
+        _menuList.Add(new TabMenuItem
+            {
+                TitleKey = KeyGrunddaten,
+                Title = TranslationHelper.Translate(KeyGrunddaten),
+                SiteTitle = "AUSSCHREIBUNG_GRUNDDATEN",
+                Url = $"/ausschreibung/{_aus.Id}",
+                Sort = 0,
+            });
+
+        if (_aus.Id != Guid.Empty)
+        {
+            var naturalId = _aus.Verfahrensart?.NaturalId;
+
+            if (VerfahrensartRegeln.ZeigeTerminplanung(naturalId))
+            {
+                _menuList.Add(new TabMenuItem
+                {
+                    TitleKey = KeyTerminplanung,
+                    Title = TranslationHelper.Translate(KeyTerminplanung),
+                    SiteTitle = "AUSSCHREIBUNG_TERMINPLANUNG",
+                    Url = $"/ausschreibung/{_aus.Id}/terminplanung",
+                    Sort = 1,
+                });
+            }
+
+            if (VerfahrensartRegeln.ZeigeLose(naturalId))
+            {
+                // Bei Freihändig wird das Los als "Zuschlagsempfänger" geführt -> abweichender Titel.
+                _menuList.Add(new TabMenuItem
+                {
+                    TitleKey = KeyLoseUndOfferten,
+                    Title = TranslationHelper.Translate(VerfahrensartRegeln.LosTitelKey(naturalId)),
+                    SiteTitle = "AUSSCHREIBUNG_LOSEUNDOFFERTEN",
+                    Url = $"/ausschreibung/{_aus.Id}/loseundofferten",
+                    Sort = 2,
+                });
+            }
+        }
+    }
+
+    /// <summary>Füllt die Kopfzeile über den Tabs mit den Eckdaten der Ausschreibung.</summary>
+    private void SetHeader()
+    {
+        if (_aus == null)
+        {
+            return;
+        }
+
+        _headerItems =
+        [
+            new("col-1", "AUSSCHREIBUNG_JAHR", _aus.Jahr?.ToString() ?? string.Empty),
+            new("col-1", "AUSSCHREIBUNG_NUMMER", _aus.NummerStr),
+            new("col-4", "AUSSCHREIBUNG_BEZEICHNUNG", _aus.Bezeichnung),
+            new("col-1", "AUSSCHREIBUNG_PROJEKTART", _aus.Projektart?.Bezeichnung ?? string.Empty),
+            new("col-1", "AUSSCHREIBUNG_VERFAHRENSART", _aus.Verfahrensart?.Bezeichnung ?? string.Empty),
+            new("col-1", "AUSSCHREIBUNG_ROLLEBBL", _aus.RolleInAusschreibung?.Bezeichnung ?? string.Empty),
+            new("col-1", "AUSSCHREIBUNG_LEISTUNGSART", _aus.Leistungsart?.Bezeichnung ?? string.Empty),
+            new("col-1", "AUSSCHREIBUNG_ABSCHLUSSJAHR", _aus.AbschlussJahr?.ToString() ?? string.Empty)
+        ];
+    }
+
+    private void SetCurrentTab(TabMenuItem? tabMenuItem = null)
+    {
+        // GetRelativeUri liefert die Url ohne führenden Slash (z.B. "ausschreibung/{id}/terminplanung"),
+        // die Menü-Urls haben aber einen ("/ausschreibung/..."). Ohne Normalisierung schlägt der Abgleich
+        // immer fehl -> _currentTab bliebe null und der Deep-Link-Guard in OnInitializedAsync würde in einer
+        // Endlosschleife auf Grunddaten umleiten.
+        var url = "/" + NavigationService.GetRelativeUri().TrimStart('/');
+
+        if (tabMenuItem != null)
+        {
+            _currentTab = _menuList.Single(t => t.TitleKey == tabMenuItem.TitleKey);
+            return;
+        }
+
+        var tab = _menuList.SingleOrDefault(t => t.Url == url);
+        if (tab == null)
+        {
+            // Unterrouten eines Tabs (z.B. .../loseundofferten/{losId}) dem übergeordneten Tab
+            // zuordnen. Grunddaten sind ausgenommen, da deren Url Präfix aller anderen ist.
+            var treffer = _menuList
+                .Where(t => !string.IsNullOrEmpty(t.Url) && t.TitleKey != KeyGrunddaten && url.StartsWith(t.Url))
+                .ToList();
+
+            if (treffer.Count != 1)
+            {
+                Serilog.Log.ForContext<AusschreibungLayout>()
+                    .Warning("SetCurrentTab: kein eindeutiger Tab zu Url={Url} (Treffer={Anzahl})", url, treffer.Count);
+                return;
+            }
+
+            tab = treffer[0];
+        }
+
+        _currentTab = tab;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _locationChangingRegistration = NavigationManager.RegisterLocationChangingHandler(OnLocationChanging);
+            NavigationManager.LocationChanged += OnLocationChanged;
+        }
+    }
+
+    /// <summary>
+    /// Die Tabs wechseln nicht selbst: jeder Tab ist eine Route, die Navigation läuft über den Guard und aktiviert den
+    /// Tab danach über ActiveTabId. Bleibt die Navigation wegen ungespeicherter Änderungen stehen, bleibt auch der Tab.
+    /// </summary>
+    private Task TabGewaehlt(TabInteractionEventArgs args)
+    {
+        args.Cancel = true;
+        var tab = _menuList.SingleOrDefault(t => Equals(t.TitleKey, _tabs?.GetPanelId(args.PanelIndex)));
+        if (tab?.Url != null)
+        {
+            NavigationService.NavigateTo(tab.Url);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Globaler Navigations-Guard: blockiert Tab-Wechsel und das Verlassen der Seite, solange der aktive
+    /// Tab nicht gespeicherte Änderungen hat, und bietet vorher einen Bestätigungsdialog an.
+    /// </summary>
+    private ValueTask OnLocationChanging(LocationChangingContext context)
+    {
+        // Programmatische Navigation nach bestätigtem Verwerfen einmalig durchlassen.
+        if (_bypassGuard)
+        {
+            _bypassGuard = false;
+            return ValueTask.CompletedTask;
+        }
+
+        if (!EditState.HasChanges())
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        context.PreventNavigation();
+
+        var target = context.TargetLocation;
+        ConfirmService.ShowCancelConfirm(async confirmed =>
+        {
+            if (confirmed)
+            {
+                // Pendente Grunddaten-Änderungen verwerfen (die geteilte _aus-Instanz zurücksetzen).
+                // Eine erneute Rückfrage wird über _bypassGuard verhindert; EditState wird vom Tab-Wechsel selbst neu gesetzt.
+                _aus = _ausOrig?.Clone();
+                SetMenu();
+                SetHeader();
+                _bypassGuard = true;
+                NavigationService.NavigateTo(target);
+            }
+            await InvokeAsync(StateHasChanged);
+        });
+
+        return ValueTask.CompletedTask;
+    }
+
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        // Navigation zu einer ANDEREN Ausschreibung (gleiche Route, nur andere Id, z.B. über die
+        // Verweis-Links Hauptprojekt/Vorankündigung/RFI): Blazor verwendet die Komponenten wieder und
+        // führt OnInitializedAsync nicht erneut aus -> die Daten hier explizit neu laden.
+        // Nur auf Ausschreibungs-Routen reagieren: beim Wegnavigieren (z.B. zurück zur
+        // Exportgruppe) feuert der Handler ebenfalls noch; eine fremde Guid als AusId zu
+        // laden würde den Circuit mit einer unbehandelten Exception beenden, und zur fremden Url gibt es keinen Tab.
+        var segments = NavigationService.GetRelativeUri().Split("/");
+        if (segments.Length < 2 ||
+            !segments[0].Equals("ausschreibung", StringComparison.OrdinalIgnoreCase) ||
+            !Guid.TryParse(segments[1].TrimEnd('/'), out var ausId))
+        {
+            return;
+        }
+
+        if (_aus?.Id != ausId)
+        {
+            await LoadAusschreibung(ausId);
+        }
+
+        SetCurrentTab();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Übernimmt die gespeicherte Ausschreibung als neuen Ausgangszustand und frischt Kopfzeile
+    /// und Tabs auf (z.B. nachdem eine Neuanlage ihre Id erhalten hat).
+    /// </summary>
+    public void RefreshAusschreibung(Ausschreibung aus)
+    {
+        _aus = aus;
+        _ausOrig = aus.Clone();
+        SetMenu();
+        SetHeader();
+        NavigationService.NavigateTo($"/ausschreibung/{_aus.Id}", false, true);
+        StateHasChanged();
+    }
+
+    /// <summary>Meldet den Navigations-Guard ab.</summary>
+    public void Dispose()
+    {
+        _locationChangingRegistration?.Dispose();
+        NavigationManager.LocationChanged -= OnLocationChanged;
+    }
+
+    /// <param name="Class">Bootstrap-Spaltenbreite der Kopfzelle.</param>
+    /// <param name="Header">Übersetzungsschlüssel der Beschriftung.</param>
+    /// <param name="Value">Anzuzeigender Wert.</param>
+    private record HeaderItem(string Class, string Header, string Value);
+}

@@ -1,0 +1,80 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Data.Models.DTO
+@using DoeA.Data.Models.DTO.Stammdaten
+@using DoeA.Validator.Stammdaten
+@using DoeA.Interfaces.Stammdaten
+@inherits EditComponent<Sachbearbeiter, ISachbearbeiterService>
+
+@inject IOrganisationszugehoerigkeitService OrganisationszugehoerigkeitService
+
+@if (DataList == null || _organisationszugehoerigkeiten == null)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <ItreeGrid TItem="Sachbearbeiter" Data="DataList" Pageable="true" PageSize="@PageSize" PageSizes="@PageSizeOptions"
+               Sortable="true" FilterMode="ItreeGridFilterMode.FilterMenu" OnRowClick="@SelectItem">
+        <GridToolBarTemplate>
+            <ItreeSearchbox Id="searchbox" OnClick="@LoadData" Placeholder="@TranslationHelper.Translate("AUSWAEHLEN")" @bind-value="@SearchValue" @bind-onlyActive="NurAktive" />
+            <MudSpacer />
+            <ItreeButton Type="EnumButton.Neu" OnClick="@(() => SelectItem(new Sachbearbeiter()))" />
+        </GridToolBarTemplate>
+        <GridColumns>
+            <ItreeGridColumn Field="Nachname" Title="@TranslationHelper.Translate("STAMMDATEN_SACHBEARBEITER_NACHNAME")" />
+            <ItreeGridColumn Field="Vorname" Title="@TranslationHelper.Translate("STAMMDATEN_SACHBEARBEITER_VORNAME")" />
+            <ItreeGridColumn Field="Kurzbezeichnung" Title="@TranslationHelper.Translate("STAMMDATEN_SACHBEARBEITER_KURZBEZEICHNUNG")" />
+            <ItreeGridColumn Field="OrgId" Sortable="false" Title="@TranslationHelper.Translate("STAMMDATEN_SACHBEARBEITER_ORGANISATIONSZUGEHOERIGKEIT")">
+                <Template>
+                    @(_organisationszugehoerigkeiten!.FirstOrDefault(o => o.Id == context.OrgId)?.Kurzbezeichnung)
+                </Template>
+                <FilterMenuTemplate>
+                    <ItreeFilterCheckboxList Items="_filterOrganisationszugehoerigkeitEintraege" SelectedKeys="_filterOrganisationszugehoerigkeitAuswahl" IdPrefix="organisationszugehoerigkeit" />
+                </FilterMenuTemplate>
+                <FilterMenuButtonsTemplate Context="filter">
+                    <ItreeFilterButtons OnFilter="@(() => MultiFilterAsync(filter, nameof(Sachbearbeiter.OrgId), _filterOrganisationszugehoerigkeitAuswahl, s => Guid.Parse(s)))"
+                                        OnClear="@(() => MultiClearFilterAsync(filter, _filterOrganisationszugehoerigkeitAuswahl))" />
+                </FilterMenuButtonsTemplate>
+            </ItreeGridColumn>
+            <ItreeGridColumn Field="Aktiv" Title="@TranslationHelper.Translate("STAMMDATEN_SACHBEARBEITER_AKTIV")">
+                <Template>
+                    <JaNeinIcon Wert="context.Aktiv" />
+                </Template>
+            </ItreeGridColumn>
+        </GridColumns>
+    </ItreeGrid>
+
+    <ItreeFormWindow WindowVisible="@(SelectedItem != null)"
+                     WindowWidth="800px"
+                     Model="@SelectedItem"
+                     OnSave="@Save"
+                     Validator="@Validator"
+                     AutoGenerate="true"
+                     WithBaseProperties="true"
+                     IgnorePropertyList="@BasisfelderAusgeblendet"
+                     PrefixTranslationKey="STAMMDATEN_SACHBEARBEITER"
+                     OnClose="@Cancel"
+                     DropdownList="@_dropdowns"
+                     OnDelete="Delete"
+                     DeleteButtonShow="true" />
+}
+
+@code {
+    private Dictionary<string, string> _filterOrganisationszugehoerigkeitEintraege = new();
+
+    private List<ItreeFormDropdown> _dropdowns = new();
+    private List<Organisationszugehoerigkeit>? _organisationszugehoerigkeiten;
+    private List<string> _filterOrganisationszugehoerigkeitAuswahl = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        Validator = new SachbearbeiterValidator(true);
+        _organisationszugehoerigkeiten = await OrganisationszugehoerigkeitService.GetAll();
+        _filterOrganisationszugehoerigkeitEintraege = FilterEintraege(_organisationszugehoerigkeiten!, e => e.Bezeichnung);
+        var dropdownOrganisationszugehoerigkeit = CreateItreeFormDropdown(_organisationszugehoerigkeiten!.OrderBy(o => o.Kurzbezeichnung).ToList(), "OrgId", "STAMMDATEN_SACHBEARBEITER_ORGANISATIONSZUGEHOERIGKEIT");
+        _dropdowns.Add(dropdownOrganisationszugehoerigkeit);
+    }
+}

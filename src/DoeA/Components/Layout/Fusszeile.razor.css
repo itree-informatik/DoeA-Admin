@@ -1,0 +1,13 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL */
+
+footer {
+    height: 20px;
+    text-align: right;
+    background-color: #343a40 !important;
+    color: dimgray;
+}
+
+footer a {
+    color: dimgray !important;
+}

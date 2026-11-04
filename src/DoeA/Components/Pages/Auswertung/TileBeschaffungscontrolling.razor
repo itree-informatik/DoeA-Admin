@@ -1,0 +1,70 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Interfaces.Auswertungen
+@inject IAuswertungService AuswertungService
+@inject IJSRuntime JsRuntime
+@inherits BaseComponent
+
+<TileTitle TitleKey="AUSWERTUNG_TILE_BESCHAFFUNGSCONTROLLING"/>
+
+<div class="d-flex flex-column mb-2 tile-jahr">
+    <label class="form-label">@TranslationHelper.Translate("AUSWERTUNG_TILE_BESCHAFFUNGSCONTROLLING_JAHR")</label>
+    <ItreeDropDownList TItem="int" TValue="int" Data="_jahre" Value="@_selectedJahr" ValueChanged="@JahrChanged"
+                       DefaultText="@TranslationHelper.Translate("DROPDOWN_DEFAULT")" />
+</div>
+<div class="d-flex d-flex-column gap-2">
+    <ItreeButton Icon="@MudBlazor.Icons.Material.Filled.PictureAsPdf"
+                 ButtonTextKey="AUSWERTUNG_TILE_BESCHAFFUNGSCONTROLLING_PDF_ERSTELLEN"
+                 ShowButtonText="true"
+                 OnClick="CreatePdf"
+                 Enabled="@(_selectedJahr > 0 && !_isCreating)"
+                 SpinnerIsLoading="@_isCreating"/>
+</div>
+
+@code {
+    /// <summary>Meldet der Seite, dass sich der Filter geändert hat.</summary>
+    [Parameter]
+    public EventCallback Refresh { get; set; }
+
+    private bool _isCreating;
+
+    private int _selectedJahr;
+
+    private readonly List<int> _jahre = new();
+
+    protected override void OnInitialized()
+    {
+        for (var jahr = DateTime.Now.Year; jahr > 2000; jahr--)
+        {
+            _jahre.Add(jahr);
+        }
+
+        _selectedJahr = _jahre[0];
+    }
+
+    private async Task JahrChanged(int jahr)
+    {
+        _selectedJahr = jahr;
+        await Refresh.InvokeAsync();
+    }
+
+    private async Task CreatePdf()
+    {
+        if (_selectedJahr == 0 || _isCreating)
+        {
+            return;
+        }
+
+        _isCreating = true;
+        StateHasChanged();
+
+        await ErrorHandler.HandleAsync(async () =>
+        {
+            var id = await AuswertungService.GetBeschaffungscontrollingAsync(_selectedJahr);
+            await DownloadFileFromStream(JsRuntime, new Guid(id));
+        });
+
+        _isCreating = false;
+    }
+}

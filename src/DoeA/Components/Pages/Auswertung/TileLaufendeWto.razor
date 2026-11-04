@@ -1,0 +1,92 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Interfaces.Auswertungen
+@inject IAuswertungService AuswertungService
+@inject IJSRuntime JsRuntime
+@inherits BaseComponent
+
+<TileTitle TitleKey="AUSWERTUNG_TILE_LAUFENDE_WTO"/>
+
+<TileDatumBereich LabelKey="AUSWERTUNG_TILE_LAUFENDE_WTO_PUBLIKATIONSDATUM"
+                  @bind-Von="_datumVon" @bind-Bis="_datumBis" />
+
+<div class="d-flex d-flex-column gap-3 mb-2">
+    <div class="tile-label">
+        <label class="form-label">@TranslationHelper.Translate("AUSWERTUNG_TILE_LAUFENDE_WTO_VERFAHRENSART")</label>
+    </div>
+    <TileCheckbox @bind-Wert="_isOffen" LabelKey="AUSWERTUNG_TILE_LAUFENDE_WTO_VERFAHRENSART_OFFEN" />
+    <TileCheckbox @bind-Wert="_isSelektiv" LabelKey="AUSWERTUNG_TILE_LAUFENDE_WTO_VERFAHRENSART_SELEKTIV" />
+    <TileCheckbox @bind-Wert="_isEinladung" LabelKey="AUSWERTUNG_TILE_LAUFENDE_WTO_VERFAHRENSART_EINLADUNG" />
+</div>
+<div class="d-flex d-flex-column gap-3 mb-2">
+    <div class="tile-label">
+        <label class="form-label">@TranslationHelper.Translate("AUSWERTUNG_TILE_ZUSCHLAEGE_PROJEKTART")</label>
+    </div>
+    <TileCheckbox @bind-Wert="_isLogistik" LabelKey="AUSWERTUNG_TILE_ZUSCHLAEGE_PROJEKTART_LOGISTIK" />
+    <TileCheckbox @bind-Wert="_isBau" LabelKey="AUSWERTUNG_TILE_ZUSCHLAEGE_PROJEKTART_BAU" />
+</div>
+<div class="d-flex d-flex-column gap-3 mb-2">
+    <div class="tile-label">
+        <label class="form-label">@TranslationHelper.Translate("AUSWERTUNG_TILE_AUSSCHREIBUNGEN_ROLLE_BBL")</label>
+    </div>
+    <TileCheckbox @bind-Wert="_isAemterDezentral" LabelKey="AUSWERTUNG_TILE_AUSSCHREIBUNGEN_ROLLE_BBL_MELDESTELLE" />
+    <TileCheckbox @bind-Wert="_isLogistikZentral" LabelKey="AUSWERTUNG_TILE_AUSSCHREIBUNGEN_ROLLE_BBL_VERGABESTELLE" />
+</div>
+<div class="d-flex d-flex-column gap-2">
+    <ItreeButton Icon="@MudBlazor.Icons.Material.Filled.TableChart"
+                 ButtonTextKey="AUSWERTUNG_TILE_LAUFENDE_WTO_EXCEL_ERSTELLEN"
+                 ShowButtonText="true"
+                 OnClick="CreateExcel"
+                 Enabled="@(IstGueltig && !_isCreating)"
+                 SpinnerIsLoading="@_isCreating"/>
+</div>
+
+@code {
+    /// <summary>Meldet der Seite, dass sich der Filter geändert hat.</summary>
+    [Parameter]
+    public EventCallback Refresh { get; set; }
+
+    private bool _isAemterDezentral = true;
+    private bool _isBau = true;
+    private bool _isCreating;
+    private bool _isEinladung = true;
+    private bool _isLogistik = true;
+    private bool _isLogistikZentral = true;
+    private bool _isOffen = true;
+    private bool _isSelektiv = true;
+
+    private DateTime? _datumBis = DateTime.Now;
+    private DateTime? _datumVon = new DateTime(DateTime.Now.Year, 1, 1);
+
+    // Aus jeder der drei Filtergruppen muss mindestens ein Wert gewählt sein, sonst wäre die
+    // Ergebnismenge zwangsläufig leer.
+    private bool IstGueltig =>
+        (_isOffen || _isSelektiv || _isEinladung) &&
+        (_isLogistik || _isBau) &&
+        (_isAemterDezentral || _isLogistikZentral) &&
+        TileDatumBereich.IstGueltig(_datumVon, _datumBis);
+
+    private async Task CreateExcel()
+    {
+        if (!IstGueltig || _isCreating)
+        {
+            return;
+        }
+
+        _isCreating = true;
+        StateHasChanged();
+
+        await ErrorHandler.HandleAsync(async () =>
+        {
+            var id = await AuswertungService.GetLaufendeWtoAsync(
+                DateOnly.FromDateTime(_datumVon!.Value),
+                DateOnly.FromDateTime(_datumBis!.Value),
+                _isOffen, _isSelektiv, _isEinladung,
+                _isLogistik, _isBau, _isAemterDezentral, _isLogistikZentral);
+            await DownloadFileFromStream(JsRuntime, new Guid(id));
+        });
+
+        _isCreating = false;
+    }
+}

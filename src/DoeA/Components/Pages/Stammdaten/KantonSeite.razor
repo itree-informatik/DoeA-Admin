@@ -1,0 +1,80 @@
+@* SPDX-License-Identifier: AGPL-3.0-or-later
+   Copyright (C) 2026 Schweizerische Eidgenossenschaft, Bundesamt für Bauten und Logistik BBL *@
+
+@using DoeA.Data.Models.DTO
+@using DoeA.Data.Models.DTO.Stammdaten
+@using DoeA.Interfaces.Stammdaten
+@using DoeA.Validator.Stammdaten
+
+@inherits EditComponent<Kanton, IKantonService>
+
+@inject ISpracheService SpracheService
+
+@if (DataList == null || _sprachen == null)
+{
+    <ItreeSpinner />
+}
+else
+{
+    <ItreeGrid TItem="Kanton" Data="DataList" Pageable="true" PageSize="@PageSize" PageSizes="@PageSizeOptions"
+               Sortable="true" FilterMode="ItreeGridFilterMode.FilterMenu" OnRowClick="@SelectItem">
+        <GridToolBarTemplate>
+            <ItreeSearchbox Id="searchbox" OnClick="@LoadData" Placeholder="@TranslationHelper.Translate("AUSWAEHLEN")" @bind-value="@SearchValue" @bind-onlyActive="NurAktive" />
+            <MudSpacer />
+            <ItreeButton Type="EnumButton.Neu" OnClick="@(() => SelectItem(new Kanton()))" />
+        </GridToolBarTemplate>
+        <GridColumns>
+            <ItreeGridColumn Field="Bezeichnung" Title="@TranslationHelper.Translate("STAMMDATEN_KANTON_BEZEICHNUNG")" />
+            <ItreeGridColumn Field="Kurzbezeichnung" Title="@TranslationHelper.Translate("STAMMDATEN_KANTON_KURZBEZEICHNUNG")" />
+            <ItreeGridColumn Field="SprId" Title="@TranslationHelper.Translate("STAMMDATEN_KANTON_SPRACHE")" Sortable="false">
+                <Template>
+                    @(_sprachen!.FirstOrDefault(s => s.Id == context.SprId)?.Bezeichnung)
+                </Template>
+                <FilterMenuTemplate>
+                    <ItreeFilterCheckboxList Items="_filterSpracheEintraege" SelectedKeys="_filterSpracheAuswahl" IdPrefix="sprache" />
+                </FilterMenuTemplate>
+                <FilterMenuButtonsTemplate Context="filter">
+                    <ItreeFilterButtons OnFilter="@(() => MultiFilterAsync(filter, nameof(Kanton.SprId), _filterSpracheAuswahl, s => Guid.Parse(s)))"
+                                        OnClear="@(() => MultiClearFilterAsync(filter, _filterSpracheAuswahl))" />
+                </FilterMenuButtonsTemplate>
+            </ItreeGridColumn>
+            <ItreeGridColumn Field="Aktiv" Title="@TranslationHelper.Translate("STAMMDATEN_KANTON_AKTIV")">
+                <Template>
+                    <JaNeinIcon Wert="context.Aktiv" />
+                </Template>
+            </ItreeGridColumn>
+        </GridColumns>
+    </ItreeGrid>
+
+    <ItreeFormWindow WindowVisible="@(SelectedItem != null)"
+                     WindowWidth="800px"
+                     Model="@SelectedItem"
+                     OnSave="@Save"
+                     Validator="@Validator"
+                     AutoGenerate="true"
+                     WithBaseProperties="true"
+                     IgnorePropertyList="@BasisfelderAusgeblendet"
+                     PrefixTranslationKey="STAMMDATEN_KANTON"
+                     OnClose="@Cancel"
+                     DropdownList="@_dropdowns"
+                     OnDelete="Delete"
+                     DeleteButtonShow="true" />
+}
+
+@code {
+    private Dictionary<string, string> _filterSpracheEintraege = new();
+
+    private List<ItreeFormDropdown> _dropdowns = new();
+    private List<Sprache>? _sprachen;
+    private List<string> _filterSpracheAuswahl = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        Validator = new KantonValidator(true);
+        _sprachen = await SpracheService.GetAll();
+        _filterSpracheEintraege = FilterEintraege(_sprachen!, e => e.Bezeichnung);
+        var dropdownSprache = CreateItreeFormDropdown(_sprachen!.OrderBy(s => s.Bezeichnung).ToList(), "SprId", "STAMMDATEN_KANTON_SPRACHE");
+        _dropdowns.Add(dropdownSprache);
+    }
+}
