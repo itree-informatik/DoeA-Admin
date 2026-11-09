@@ -362,7 +362,7 @@ public class AuswertungService : IAuswertungService
 
     /// <summary>
     /// Excel «Laufende WTO»: eine Zeile pro Ausschreibung der gewählten Verfahrens-/Projektarten und BBL-Rollen mit Publikation
-    /// im Zeitraum (beim selektiven Verfahren zählt die Präqualifikation), die offene Lose ohne Offerten über «erfasst» hinaus hat.
+    /// im Zeitraum (auch beim selektiven Verfahren das Publikationsdatum der Grunddaten), die offene Lose ohne Offerten über «erfasst» hinaus hat.
     /// Das Zuschlagsdatum bleibt leer und wird händisch nachgeführt; die Wochen-Spalten rechnen als Excel-Formeln erst dann.
     /// </summary>
     public async Task<string> GetLaufendeWtoAsync(DateOnly datumVon, DateOnly datumBis, bool offen, bool selektiv, bool einladung,
@@ -385,18 +385,11 @@ public class AuswertungService : IAuswertungService
             from res in resJoin.DefaultIfEmpty()
             join sac in context.TSachbearbeiter on aus.AusSacBblId equals sac.SacId into sacJoin
             from sac in sacJoin.DefaultIfEmpty()
-            // Selektiv: massgebend ist die Publikation der Präqualifikation, das Datum ihrer Zuschläge (alle gleich, LosService
-            // prüft das). Ohne Präqualifikation fehlt das Datum, die Ausschreibung erscheint noch nicht.
-            let publikation = vea.VeaNaturalId == VerfahrensartSelektiv
-                ? context.TOfferteOffertezustand
-                    .Where(o => o.OozOff.OffLos.LosAusId == aus.AusId && o.OozOfz.OfzNaturalId == OffertezustandZuschlagPraequali)
-                    .Min(o => (DateOnly?)o.OozDatum)
-                : aus.AusPublikation
             where verfahrensarten.Contains(vea.VeaNaturalId!) &&
                   projektarten.Contains(pra.PraNaturalId!) &&
                   rollen.Contains(ria.RiaNaturalId!) &&
-                  publikation >= datumVon &&
-                  publikation <= datumBis &&
+                  aus.AusPublikation >= datumVon &&
+                  aus.AusPublikation <= datumBis &&
                   context.TLos.Any(los => los.LosAusId == aus.AusId && los.LosZustand == nameof(EnumLosZustand.Offen)) &&
                   // Laufend = keine Offerte ist über "erfasst" hinaus: der letzte Zustand jeder Offerte ist einer der
                   // OffertezustaendeLaufend (Offerten ohne Zustand gelten als laufend).
@@ -423,7 +416,7 @@ public class AuswertungService : IAuswertungService
                 Ressort = res != null ? res.ResKurzbezeichnung : null,
                 Bedarfsstelle = amt.AmtBezeichnung,
                 Bbl = sac != null ? sac.SacVorname + " " + sac.SacNachname : null,
-                Publikation = publikation,
+                Publikation = aus.AusPublikation,
                 Eingabefrist = aus.AusOffertenFrist
             }).ToListAsync();
 

@@ -224,7 +224,7 @@ else
     private const string SpaltePubliziertMonat = nameof(AusschreibungSuche.PubliziertMonat);
     private const string SpaltePubliziertTag = nameof(AusschreibungSuche.PubliziertTag);
 
-    private static readonly List<int?> PageSizeOptions = [10, 25, 50, 100];
+    private static readonly List<int?> PageSizeOptions = [10, 25, 50, 100, 250, 500, 1000];
 
     // Die Publiziert-Spalte filtert über drei Dimensionen, die zusammen wirken.
     private static readonly string[] PubliziertTeilKeys = [SpaltePubliziertJahr, SpaltePubliziertMonat, SpaltePubliziertTag];
